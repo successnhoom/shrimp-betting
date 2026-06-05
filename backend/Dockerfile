@@ -3,10 +3,12 @@ WORKDIR /app
 
 FROM base AS deps
 COPY package*.json ./
+COPY prisma ./prisma
 RUN npm ci --only=production
 
 FROM base AS builder
 COPY package*.json ./
+COPY prisma ./prisma
 RUN npm ci
 COPY . .
 RUN npx prisma generate
