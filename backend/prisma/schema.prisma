@@ -1,0 +1,216 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  customer
+  staff
+  admin
+}
+
+enum RoundStatus {
+  open
+  locked
+  settled
+  cancelled
+}
+
+enum BetSide {
+  even
+  odd
+}
+
+enum BetStatus {
+  pending
+  accepted
+  partial
+  refunded
+  won
+  lost
+}
+
+enum TransactionType {
+  deposit
+  withdraw
+  bet_lock
+  bet_refund
+  payout
+  shop_fee
+}
+
+model User {
+  id           String   @id @default(uuid())
+  phone        String   @unique
+  displayName  String   @map("display_name")
+  role         Role     @default(customer)
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  wallet        Wallet?
+  bets          Bet[]
+  transactions  Transaction[]
+  notifications Notification[]
+  ownedShops    Shop[]        @relation("ShopOwner")
+  staffShops    ShopStaff[]
+  openedRounds  Round[]
+
+  @@map("users")
+}
+
+model Wallet {
+  id           String   @id @default(uuid())
+  userId       String   @unique @map("user_id")
+  balance      Decimal  @default(0) @db.Decimal(12, 2)
+  lockedAmount Decimal  @default(0) @map("locked_amount") @db.Decimal(12, 2)
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("wallets")
+}
+
+model Shop {
+  id         String   @id @default(uuid())
+  name       String
+  ownerId    String   @map("owner_id")
+  payoutRate Decimal  @default(0.90) @map("payout_rate") @db.Decimal(4, 2)
+  isActive   Boolean  @default(true) @map("is_active")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  owner  User        @relation("ShopOwner", fields: [ownerId], references: [id])
+  tables Table[]
+  rounds Round[]
+  staff  ShopStaff[]
+
+  @@map("shops")
+}
+
+model ShopStaff {
+  shopId String @map("shop_id")
+  userId String @map("user_id")
+
+  shop Shop @relation(fields: [shopId], references: [id])
+  user User @relation(fields: [userId], references: [id])
+
+  @@id([shopId, userId])
+  @@map("shop_staff")
+}
+
+model Table {
+  id          String  @id @default(uuid())
+  shopId      String  @map("shop_id")
+  tableNumber Int     @map("table_number")
+  qrCodeUrl   String? @map("qr_code_url")
+
+  shop Shop @relation(fields: [shopId], references: [id])
+
+  @@unique([shopId, tableNumber])
+  @@map("tables")
+}
+
+model Round {
+  id        String      @id @default(uuid())
+  shopId    String      @map("shop_id")
+  staffId   String      @map("staff_id")
+  status    RoundStatus @default(open)
+  totalEven Decimal     @default(0) @map("total_even") @db.Decimal(12, 2)
+  totalOdd  Decimal     @default(0) @map("total_odd")  @db.Decimal(12, 2)
+  result    BetSide?
+  openedAt  DateTime    @default(now()) @map("opened_at")
+  closedAt  DateTime?   @map("closed_at")
+  settledAt DateTime?   @map("settled_at")
+
+  shop  Shop  @relation(fields: [shopId], references: [id])
+  staff User  @relation(fields: [staffId], references: [id])
+  bets  Bet[]
+
+  @@index([shopId, status])
+  @@index([settledAt])
+  @@map("rounds")
+}
+
+model Bet {
+  id              String    @id @default(uuid())
+  roundId         String    @map("round_id")
+  userId          String    @map("user_id")
+  side            BetSide
+  amountRequested Decimal   @map("amount_requested") @db.Decimal(12, 2)
+  amountAccepted  Decimal   @default(0) @map("amount_accepted") @db.Decimal(12, 2)
+  payout          Decimal?  @db.Decimal(12, 2)
+  status          BetStatus @default(pending)
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  round Round @relation(fields: [roundId], references: [id])
+  user  User  @relation(fields: [userId], references: [id])
+
+  @@index([roundId])
+  @@index([userId])
+  @@index([status])
+  @@map("bets")
+}
+
+model Transaction {
+  id        String          @id @default(uuid())
+  userId    String          @map("user_id")
+  type      TransactionType
+  amount    Decimal         @db.Decimal(12, 2)
+  refId     String?         @map("ref_id")
+  note      String?
+  createdAt DateTime        @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([type])
+  @@index([createdAt])
+  @@map("transactions")
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  type      String
+  title     String
+  body      String
+  data      Json?
+  isRead    Boolean  @default(false) @map("is_read")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([isRead])
+  @@index([createdAt(sort: Desc)])
+  @@map("notifications")
+}
+
+model OtpCode {
+  id        String   @id @default(uuid())
+  phone     String
+  code      String
+  expiresAt DateTime @map("expires_at")
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([phone])
+  @@map("otp_codes")
+}
+
+model PaymentIntent {
+  id             String    @id @default(uuid())
+  userId         String    @map("user_id")
+  stripeIntentId String    @unique @map("stripe_intent_id")
+  amount         Decimal   @db.Decimal(12, 2)
+  currency       String    @default("thb")
+  status         String    @default("pending")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  fulfilledAt    DateTime? @map("fulfilled_at")
+
+  @@map("payment_intents")
+}

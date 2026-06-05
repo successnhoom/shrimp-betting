@@ -1,0 +1,318 @@
+@import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700;800;900&family=Inter:wght@300;400;600;700;800;900&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── 3D Design Tokens ──────────────────────────────────── */
+:root {
+  --bg:        #07080f;
+  --bg2:       #0d0f1c;
+  --bg3:       #12152a;
+  --surface:   rgba(255,255,255,0.04);
+  --surface2:  rgba(255,255,255,0.08);
+  --border:    rgba(255,255,255,0.08);
+  --border2:   rgba(255,255,255,0.15);
+  --blue:      #4f9fff;
+  --blue-glow: rgba(79,159,255,0.35);
+  --gold:      #ffd700;
+  --gold-glow: rgba(255,215,0,0.4);
+  --cyan:      #00e5ff;
+  --purple:    #a855f7;
+  --even:      #3b82f6;
+  --odd:       #f59e0b;
+  --radius:    20px;
+  --shadow-sm: 0 2px 8px rgba(0,0,0,0.4);
+  --shadow:    0 4px 24px rgba(0,0,0,0.5), 0 1px 2px rgba(0,0,0,0.4);
+  --shadow-lg: 0 8px 48px rgba(0,0,0,0.6), 0 2px 4px rgba(0,0,0,0.5);
+}
+
+/* ── Base ─────────────────────────────────────────────── */
+@layer base {
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: 'Sarabun', 'Inter', sans-serif;
+    -webkit-font-smoothing: antialiased;
+    background: #f8fafc;
+    color: #0f172a;
+  }
+  ::-webkit-scrollbar { width: 3px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 99px; }
+}
+
+/* ── 3D Components ────────────────────────────────────── */
+@layer components {
+
+  /* ── Cards ── */
+  .card {
+    @apply bg-white rounded-2xl p-4;
+    border: 1px solid rgba(0,0,0,0.07);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 4px 16px rgba(0,0,0,0.05);
+  }
+
+  .card-3d {
+    position: relative;
+    background: white;
+    border-radius: 24px;
+    padding: 20px;
+    border: 1px solid rgba(0,0,0,0.06);
+    box-shadow:
+      0 1px 0 rgba(255,255,255,0.9) inset,
+      0 2px 8px rgba(0,0,0,0.06),
+      0 8px 32px rgba(0,0,0,0.06),
+      0 24px 64px rgba(0,0,0,0.04);
+    transform: perspective(1000px) translateZ(0);
+    transition: transform .3s ease, box-shadow .3s ease;
+  }
+  .card-3d:hover {
+    transform: perspective(1000px) translateZ(4px);
+    box-shadow:
+      0 1px 0 rgba(255,255,255,0.9) inset,
+      0 4px 16px rgba(0,0,0,0.08),
+      0 16px 48px rgba(0,0,0,0.1),
+      0 32px 80px rgba(0,0,0,0.06);
+  }
+
+  /* Dark glass card */
+  .card-glass {
+    background: var(--surface);
+    backdrop-filter: blur(24px) saturate(180%);
+    border: 1px solid var(--border2);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow), inset 0 1px 0 rgba(255,255,255,0.1);
+  }
+
+  /* ── Inputs ── */
+  .input {
+    @apply w-full rounded-xl px-4 py-3 text-base;
+    background: rgba(0,0,0,0.03);
+    border: 1.5px solid rgba(0,0,0,0.1);
+    transition: all .2s;
+    @apply focus:outline-none;
+  }
+  .input:hover  { border-color: rgba(0,0,0,0.2); }
+  .input:focus  { border-color: var(--even); box-shadow: 0 0 0 3px rgba(59,130,246,0.12); background: white; }
+
+  /* ── 3D Buttons ── */
+  .btn-primary {
+    position: relative;
+    @apply font-bold px-5 py-3 rounded-xl text-white transition-all;
+    background: linear-gradient(160deg, #4f9fff 0%, #2563eb 50%, #1d4ed8 100%);
+    box-shadow:
+      0 1px 0 rgba(255,255,255,0.25) inset,
+      0 4px 0 #1a3f9f,
+      0 6px 20px rgba(37,99,235,0.4);
+    transform: translateY(0);
+  }
+  .btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow:
+      0 1px 0 rgba(255,255,255,0.3) inset,
+      0 6px 0 #1a3f9f,
+      0 10px 30px rgba(37,99,235,0.5);
+  }
+  .btn-primary:active {
+    transform: translateY(3px);
+    box-shadow: 0 1px 0 rgba(255,255,255,0.2) inset, 0 1px 0 #1a3f9f;
+  }
+  .btn-primary:disabled { opacity: .5; transform: none; cursor: not-allowed; }
+
+  .btn-secondary {
+    @apply font-semibold px-5 py-3 rounded-xl transition-all;
+    background: white;
+    border: 1.5px solid rgba(0,0,0,0.1);
+    color: #374151;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 0 0 0 transparent;
+  }
+  .btn-secondary:hover {
+    border-color: rgba(0,0,0,0.2);
+    box-shadow: 0 3px 12px rgba(0,0,0,0.12);
+    transform: translateY(-1px);
+  }
+
+  /* 3D even/odd bet buttons */
+  .btn-even {
+    position: relative;
+    @apply font-black text-white rounded-2xl transition-all;
+    background: linear-gradient(160deg, #60a5fa, #2563eb, #1e40af);
+    box-shadow:
+      0 1px 0 rgba(255,255,255,0.3) inset,
+      0 5px 0 #1a3f9f,
+      0 8px 25px rgba(37,99,235,0.45),
+      0 0 40px rgba(59,130,246,0.2);
+    transform: translateY(0);
+  }
+  .btn-even:hover {
+    transform: translateY(-3px);
+    box-shadow:
+      0 1px 0 rgba(255,255,255,0.35) inset,
+      0 8px 0 #1a3f9f,
+      0 14px 35px rgba(37,99,235,0.55),
+      0 0 60px rgba(59,130,246,0.3);
+  }
+  .btn-even:active { transform: translateY(4px); box-shadow: 0 1px 0 #1a3f9f; }
+
+  .btn-odd {
+    position: relative;
+    @apply font-black text-white rounded-2xl transition-all;
+    background: linear-gradient(160deg, #fbbf24, #f59e0b, #b45309);
+    box-shadow:
+      0 1px 0 rgba(255,255,255,0.3) inset,
+      0 5px 0 #7c3a00,
+      0 8px 25px rgba(217,119,6,0.45),
+      0 0 40px rgba(245,158,11,0.2);
+    transform: translateY(0);
+  }
+  .btn-odd:hover {
+    transform: translateY(-3px);
+    box-shadow:
+      0 1px 0 rgba(255,255,255,0.35) inset,
+      0 8px 0 #7c3a00,
+      0 14px 35px rgba(217,119,6,0.55),
+      0 0 60px rgba(245,158,11,0.3);
+  }
+  .btn-odd:active { transform: translateY(4px); box-shadow: 0 1px 0 #7c3a00; }
+
+  /* ── Dark 3D card for staff/display ── */
+  .card-dark-3d {
+    background: linear-gradient(160deg, #1a1f3a 0%, #12152a 100%);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 24px;
+    box-shadow:
+      inset 0 1px 0 rgba(255,255,255,0.08),
+      0 4px 24px rgba(0,0,0,0.5),
+      0 1px 2px rgba(0,0,0,0.6);
+  }
+
+  /* ── Neon glow text ── */
+  .text-neon-blue {
+    color: #60a5fa;
+    text-shadow: 0 0 10px rgba(96,165,250,0.7), 0 0 30px rgba(96,165,250,0.4);
+  }
+  .text-neon-gold {
+    color: #ffd700;
+    text-shadow: 0 0 10px rgba(255,215,0,0.7), 0 0 30px rgba(255,215,0,0.4);
+  }
+  .text-neon-amber {
+    color: #fbbf24;
+    text-shadow: 0 0 10px rgba(251,191,36,0.7), 0 0 30px rgba(251,191,36,0.4);
+  }
+
+  /* ── Gradient text ── */
+  .text-gradient-blue {
+    background: linear-gradient(135deg, #60a5fa, #818cf8);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+  }
+  .text-gradient-gold {
+    background: linear-gradient(135deg, #d4af37, #f5e06e, #d4af37);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+  }
+  .text-gradient-primary {
+    background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+  }
+
+  /* ── Mesh gradient bg ── */
+  .bg-mesh {
+    background-color: #07080f;
+    background-image:
+      radial-gradient(at 20% 20%, rgba(37,99,235,0.15) 0px, transparent 50%),
+      radial-gradient(at 80% 10%, rgba(168,85,247,0.1) 0px, transparent 50%),
+      radial-gradient(at 50% 80%, rgba(6,182,212,0.08) 0px, transparent 50%),
+      radial-gradient(at 90% 70%, rgba(245,158,11,0.08) 0px, transparent 50%);
+  }
+
+  /* ── Aurora header ── */
+  .bg-aurora {
+    background: linear-gradient(135deg, #0d1b3e 0%, #0a0e1a 40%, #1a0a2e 70%, #0d1b3e 100%);
+    position: relative;
+    overflow: hidden;
+  }
+  .bg-aurora::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(ellipse 80% 50% at 20% 50%, rgba(79,159,255,0.12) 0%, transparent 60%),
+      radial-gradient(ellipse 60% 40% at 80% 50%, rgba(168,85,247,0.1) 0%, transparent 60%);
+    pointer-events: none;
+  }
+
+  /* ── Gradient border ── */
+  .border-gradient {
+    position: relative;
+    border-radius: 20px;
+    padding: 1.5px;
+    background: linear-gradient(135deg, rgba(79,159,255,0.5), rgba(168,85,247,0.3), rgba(0,229,255,0.4));
+  }
+  .border-gradient > * { border-radius: 18.5px; }
+}
+
+/* ── Utilities ────────────────────────────────────────── */
+@layer utilities {
+  .glow-blue   { box-shadow: 0 0 20px rgba(59,130,246,0.4), 0 0 40px rgba(59,130,246,0.15); }
+  .glow-amber  { box-shadow: 0 0 20px rgba(245,158,11,0.4), 0 0 40px rgba(245,158,11,0.15); }
+  .glow-purple { box-shadow: 0 0 20px rgba(168,85,247,0.4), 0 0 40px rgba(168,85,247,0.15); }
+  .glow-gold   { box-shadow: 0 0 30px rgba(255,215,0,0.5), 0 0 60px rgba(255,215,0,0.2); }
+
+  .animate-float  { animation: float 3s ease-in-out infinite; }
+  .animate-pulse-slow { animation: pulse 3s ease-in-out infinite; }
+  .card-premium { @apply card-3d; }
+}
+
+/* ── Keyframes ────────────────────────────────────────── */
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50%       { transform: translateY(-8px); }
+}
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position:  200% 0; }
+}
+@keyframes glow-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: .6; }
+}
+
+/* ── Mobile Native ──────────────────────────────────────── */
+
+/* Safe area support (iPhone notch / Dynamic Island) */
+.pb-safe { padding-bottom: env(safe-area-inset-bottom, 0px); }
+.pt-safe { padding-top:    env(safe-area-inset-top,    0px); }
+
+/* Remove tap highlight on mobile */
+* { -webkit-tap-highlight-color: transparent; }
+
+/* Smooth scroll on iOS */
+html { -webkit-overflow-scrolling: touch; }
+
+/* Prevent text size adjust on orientation change */
+body { -webkit-text-size-adjust: 100%; }
+
+/* Bottom nav offset for content */
+.content-with-nav { padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px)); }
+
+/* Touch-friendly minimum tap target */
+button, a { min-height: 44px; }
+
+/* Active state for mobile buttons */
+@media (hover: none) {
+  .btn-even:active  { transform: translateY(4px) !important; }
+  .btn-odd:active   { transform: translateY(4px) !important; }
+  .btn-primary:active { transform: translateY(2px) !important; }
+}
+
+/* OTP input — ตัวเลขสีดำชัดเจน */
+input[inputmode="numeric"] {
+  color: #000000 !important;
+  -webkit-text-fill-color: #000000 !important;
+}
+input[inputmode="numeric"]::placeholder {
+  color: rgba(0,0,0,0.25) !important;
+  -webkit-text-fill-color: rgba(0,0,0,0.25) !important;
+}
+input[inputmode="numeric"]:focus {
+  border-color: rgba(37,99,235,0.8) !important;
+  box-shadow: 0 0 0 3px rgba(37,99,235,0.15) !important;
+}
