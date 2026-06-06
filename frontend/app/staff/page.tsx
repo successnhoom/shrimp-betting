@@ -100,7 +100,7 @@ export default function StaffPage() {
 
   // ── Socket ─────────────────────────────────────────────────
   useEffect(() => {
-    if (!shopId) return
+    if (!shopId) return undefined
     const socket = connectSocket(shopId)
     socket.emit('join:staff', shopId)
     const refresh = () => { refetchRounds(); refetchSummary(); refetchLive() }
