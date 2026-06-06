@@ -108,7 +108,7 @@ export default function StaffPage() {
     socket.on('round:settled', refresh)
     socket.on('round:stopped', refresh)
     socket.on('odds:update', refetchLive)
-    return () => socket.off('round:opened').off('round:settled').off('round:stopped').off('odds:update')
+    return () => { socket.off('round:opened').off('round:settled').off('round:stopped').off('odds:update') }
   }, [shopId])
 
   // ── Actions ────────────────────────────────────────────────
