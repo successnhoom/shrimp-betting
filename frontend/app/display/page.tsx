@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { betApi, staffApi, leaderboardApi } from '@/lib/api'
 import { connectSocket } from '@/lib/socket'
@@ -25,6 +25,14 @@ function Counter({ value }: { value: number }) {
 }
 
 export default function DisplayPage() {
+  return (
+    <Suspense fallback={<div className="h-screen w-screen flex items-center justify-center" style={{background:'#07080f'}}><div className="w-10 h-10 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"/></div>}>
+      <DisplayPageInner />
+    </Suspense>
+  )
+}
+
+function DisplayPageInner() {
   const searchParams = useSearchParams()
   const shopId = searchParams.get('shopId') || SHOP_ID
   const [round,    setRound]    = useState<any>(null)

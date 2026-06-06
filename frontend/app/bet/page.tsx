@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
@@ -15,6 +15,14 @@ import { CustomerNav } from '@/components/CustomerNav'
 import Link from 'next/link'
 
 export default function BetPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center" style={{background:'#07080f'}}><div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"/></div>}>
+      <BetPageInner />
+    </Suspense>
+  )
+}
+
+function BetPageInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const { user, setUser, logout, token, _hasHydrated } = useAuthStore()
