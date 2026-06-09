@@ -2,84 +2,88 @@
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import toast from 'react-hot-toast'
-import { walletApi } from '@/lib/api'
+import { api } from '@/lib/api'
 import Link from 'next/link'
 
 const PRESETS = [100, 200, 500, 1000, 2000, 5000]
 
-type QRData = {
-  paymentIntentId: string
-  amount: number
-  qrImageUrl: string | null
-  qrData: string | null
-  expiresAt: string
-}
-
 export default function PromptPayPage() {
   const router = useRouter()
-  const [amount, setAmount] = useState('')
-  const [qrData, setQrData] = useState<QRData | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [paid, setPaid] = useState(false)
-  const [timeLeft, setTimeLeft] = useState(0)
-  const pollRef = useRef<NodeJS.Timeout>()
-  const timerRef = useRef<NodeJS.Timeout>()
-  const initialBalanceRef = useRef<number | null>(null)
+  const [amount, setAmount]       = useState('')
+  const [qrImg, setQrImg]         = useState<string | null>(null)   // shop QR (base64)
+  const [slipPreview, setSlipPreview] = useState<string | null>(null)
+  const [slipBase64, setSlipBase64]   = useState<string | null>(null)
+  const [slipMime, setSlipMime]       = useState<string>('image/jpeg')
+  const [loading, setLoading]     = useState(false)
+  const [submitted, setSubmitted] = useState(false)
+  const [requestId, setRequestId] = useState<string | null>(null)
+  const fileRef = useRef<HTMLInputElement>(null)
 
-  // Countdown timer
+  // Load shop QR
   useEffect(() => {
-    if (!qrData) return
-    const expiry = new Date(qrData.expiresAt).getTime()
-    timerRef.current = setInterval(() => {
-      const left = Math.max(0, Math.floor((expiry - Date.now()) / 1000))
-      setTimeLeft(left)
-      if (left === 0) clearInterval(timerRef.current)
-    }, 1000)
-    return () => clearInterval(timerRef.current)
-  }, [qrData])
+    api.get('/deposit/qr').then(r => setQrImg(r.data.qrBase64)).catch(() => {})
+  }, [])
 
-  // Poll wallet balance to detect payment
-  useEffect(() => {
-    if (!qrData || paid) return
+  function handleSlipChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (file.size > 5 * 1024 * 1024) { toast.error('รูปใหญ่เกิน 5MB'); return }
+    const reader = new FileReader()
+    reader.onload = ev => {
+      const result = ev.target?.result as string
+      // result = "data:image/jpeg;base64,xxxx"
+      const [meta, b64] = result.split(',')
+      const mime = meta.match(/:(.*?);/)?.[1] || 'image/jpeg'
+      setSlipPreview(result)
+      setSlipBase64(b64)
+      setSlipMime(mime)
+    }
+    reader.readAsDataURL(file)
+  }
 
-    // Get initial balance first
-    walletApi.get().then(r => {
-      initialBalanceRef.current = r.data.balance
-    })
-
-    pollRef.current = setInterval(async () => {
-      try {
-        const res = await walletApi.get()
-        const newBalance = res.data.balance
-        if (initialBalanceRef.current !== null && newBalance > initialBalanceRef.current) {
-          clearInterval(pollRef.current)
-          setPaid(true)
-          toast.success(`🎉 เติมเงิน ${qrData.amount.toLocaleString()} ฿ สำเร็จ!`)
-          setTimeout(() => router.push('/wallet'), 2500)
-        }
-      } catch { /* ignore */ }
-    }, 3000)
-
-    return () => clearInterval(pollRef.current)
-  }, [qrData, paid, router])
-
-  async function generateQR() {
+  async function handleSubmit() {
     const amt = parseFloat(amount)
     if (!amt || amt < 20) return toast.error('ขั้นต่ำ 20 บาท')
     setLoading(true)
     try {
-      const res = await walletApi.depositPromptPay(amt)
-      setQrData(res.data)
-      setTimeLeft(15 * 60)
+      const res = await api.post('/deposit/request', {
+        amount: amt,
+        slipBase64: slipBase64 || undefined,
+        slipMime:   slipBase64 ? slipMime : undefined,
+      })
+      setRequestId(res.data.requestId)
+      setSubmitted(true)
+      toast.success('ส่งคำขอแล้ว!')
     } catch (err: any) {
-      const msg = err?.response?.data?.error || 'เกิดข้อผิดพลาด'
-      toast.error(msg)
+      toast.error(err?.response?.data?.error || 'เกิดข้อผิดพลาด')
     } finally {
       setLoading(false)
     }
   }
 
-  const fmt = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`
+  if (submitted) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <header className="bg-blue-900 text-white px-4 py-3 flex items-center gap-3">
+          <Link href="/wallet" className="text-blue-300">← กลับ</Link>
+          <h1 className="font-bold">เติมเงิน PromptPay</h1>
+        </header>
+        <main className="max-w-sm mx-auto p-4">
+          <div className="card text-center py-12 space-y-4">
+            <div className="text-6xl">⏳</div>
+            <p className="font-bold text-gray-800 text-xl">รอแอดมินอนุมัติ</p>
+            <p className="text-gray-500 text-sm">แจ้งเตือนผ่าน Telegram แล้ว<br/>เครดิตจะเข้าหลังแอดมินกดอนุมัติ</p>
+            <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 text-xs text-blue-600">
+              📋 Request ID: <span className="font-mono">{requestId?.slice(0, 8)}</span>
+            </div>
+            <button onClick={() => router.push('/wallet')} className="btn-primary w-full">
+              กลับหน้ากระเป๋า
+            </button>
+          </div>
+        </main>
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -90,104 +94,81 @@ export default function PromptPayPage() {
 
       <main className="max-w-sm mx-auto p-4 space-y-4">
 
-        {/* Step 1: Enter amount */}
-        {!qrData && (
-          <div className="card space-y-4">
-            <div className="text-center">
-              <div className="text-5xl mb-2">📱</div>
-              <p className="font-bold text-gray-800">สแกน QR จ่ายผ่าน PromptPay</p>
-              <p className="text-gray-400 text-sm">ชำระผ่านแอปธนาคาร — เครดิตเข้าอัตโนมัติ</p>
+        {/* Shop QR */}
+        <div className="card text-center space-y-3">
+          <p className="font-bold text-gray-800">สแกน QR โอนเงิน</p>
+          {qrImg ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={`data:image/png;base64,${qrImg}`} alt="PromptPay QR"
+              className="w-56 mx-auto rounded-2xl border-4 border-gray-100 shadow" />
+          ) : (
+            <div className="w-56 h-56 mx-auto rounded-2xl border-4 border-dashed border-gray-200 flex items-center justify-center bg-gray-50">
+              <p className="text-gray-400 text-sm text-center px-4">รอแอดมินอัพโหลด QR Code</p>
             </div>
+          )}
+          <p className="text-gray-400 text-xs">สแกนด้วยแอปธนาคาร · ทุกธนาคาร</p>
+        </div>
 
-            <div className="flex flex-wrap gap-2">
-              {PRESETS.map(a => (
-                <button key={a} onClick={() => setAmount(a.toString())}
-                  className={`px-3 py-1.5 rounded-xl text-sm font-medium border transition-all ${
-                    amount === a.toString()
-                      ? 'bg-blue-600 text-white border-blue-600'
-                      : 'border-gray-300 text-gray-700 hover:border-blue-400'
-                  }`}>
-                  {a.toLocaleString()}
-                </button>
-              ))}
-            </div>
+        {/* Amount */}
+        <div className="card space-y-3">
+          <p className="font-semibold text-gray-700">ระบุจำนวนเงินที่โอน</p>
+          <div className="flex flex-wrap gap-2">
+            {PRESETS.map(a => (
+              <button key={a} onClick={() => setAmount(a.toString())}
+                className={`px-3 py-1.5 rounded-xl text-sm font-medium border transition-all ${
+                  amount === a.toString()
+                    ? 'bg-blue-600 text-white border-blue-600'
+                    : 'border-gray-300 text-gray-700 hover:border-blue-400'
+                }`}>
+                {a.toLocaleString()}
+              </button>
+            ))}
+          </div>
+          <div className="relative">
+            <input type="number" value={amount} onChange={e => setAmount(e.target.value)}
+              className="input pr-12 text-lg font-bold" placeholder="จำนวนเงิน (ขั้นต่ำ 20)"
+              inputMode="numeric" />
+            <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400">฿</span>
+          </div>
+        </div>
 
+        {/* Slip upload */}
+        <div className="card space-y-3">
+          <p className="font-semibold text-gray-700">อัพโหลดสลิป <span className="text-gray-400 text-sm font-normal">(แนะนำ)</span></p>
+          <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleSlipChange} />
+          {slipPreview ? (
             <div className="relative">
-              <input
-                type="number" value={amount} onChange={e => setAmount(e.target.value)}
-                className="input pr-12 text-lg font-bold" placeholder="จำนวนเงิน"
-                inputMode="numeric"
-              />
-              <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400">฿</span>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={slipPreview} alt="slip" className="w-full rounded-xl border border-gray-200 max-h-48 object-contain" />
+              <button onClick={() => { setSlipPreview(null); setSlipBase64(null) }}
+                className="absolute top-2 right-2 bg-red-500 text-white text-xs px-2 py-1 rounded-lg">
+                ลบ
+              </button>
             </div>
-
-            <button onClick={generateQR} disabled={loading || !amount} className="btn-primary w-full text-lg py-4">
-              {loading ? '⏳ กำลังสร้าง QR...' : '🔲 สร้าง QR Code'}
+          ) : (
+            <button onClick={() => fileRef.current?.click()}
+              className="w-full border-2 border-dashed border-gray-300 rounded-xl py-8 text-gray-400 hover:border-blue-400 hover:text-blue-500 transition-all">
+              <div className="text-3xl mb-1">📸</div>
+              <p className="text-sm">กดเพื่อเลือกรูปสลิป</p>
             </button>
+          )}
+        </div>
 
-            <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 text-xs text-blue-600 text-center">
-              ✅ เครดิตเข้าอัตโนมัติหลังจ่ายผ่านแอปธนาคาร
-            </div>
-          </div>
-        )}
+        <button onClick={handleSubmit} disabled={loading || !amount}
+          className="btn-primary w-full text-lg py-4">
+          {loading ? '⏳ กำลังส่ง...' : '✅ แจ้งโอนเงินแล้ว'}
+        </button>
 
-        {/* Step 2: Show QR */}
-        {qrData && !paid && (
-          <div className="card space-y-4 text-center">
-            <div className="flex items-center justify-between">
-              <p className="font-bold text-gray-800 text-lg">โอน {qrData.amount.toLocaleString()} ฿</p>
-              <span className={`text-sm font-mono font-bold px-2 py-1 rounded-lg ${
-                timeLeft < 60 ? 'bg-red-50 text-red-500' : 'bg-gray-100 text-gray-600'
-              }`}>
-                ⏱ {fmt(timeLeft)}
-              </span>
-            </div>
-
-            {/* QR Image from Stripe */}
-            {qrData.qrImageUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={qrData.qrImageUrl}
-                alt="PromptPay QR"
-                className="w-64 mx-auto rounded-2xl border-4 border-gray-100 shadow"
-              />
-            ) : (
-              <div className="w-64 h-64 mx-auto rounded-2xl border-4 border-dashed border-gray-200 flex items-center justify-center">
-                <p className="text-gray-400 text-sm">ไม่สามารถแสดง QR ได้</p>
-              </div>
-            )}
-
-            <div className="bg-green-50 border border-green-100 rounded-xl p-3">
-              <p className="text-green-700 text-sm font-medium">📋 ขั้นตอน:</p>
-              <ol className="text-green-600 text-sm mt-1 space-y-1 text-left list-decimal list-inside">
-                <li>เปิดแอปธนาคาร</li>
-                <li>เลือก "พร้อมเพย์" หรือ "สแกน QR"</li>
-                <li>สแกน QR ด้านบน</li>
-                <li>ยืนยันจำนวน {qrData.amount.toLocaleString()} ฿</li>
-                <li>เครดิตจะเข้าอัตโนมัติ ✅</li>
-              </ol>
-            </div>
-
-            <div className="flex items-center gap-2 text-gray-400 text-sm justify-center">
-              <div className="w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
-              กำลังรอการชำระเงิน...
-            </div>
-
-            <button onClick={() => { setQrData(null); setAmount('') }} className="btn-secondary w-full text-sm">
-              ← เปลี่ยนจำนวน
-            </button>
-          </div>
-        )}
-
-        {/* Step 3: Success */}
-        {paid && (
-          <div className="card text-center py-12 space-y-3">
-            <div className="text-6xl">🎉</div>
-            <p className="font-bold text-gray-800 text-xl">เติมเงินสำเร็จ!</p>
-            <p className="text-green-600 font-bold text-2xl">+{qrData?.amount.toLocaleString()} ฿</p>
-            <p className="text-gray-400 text-sm">เครดิตเข้ากระเป๋าแล้ว กำลังกลับ...</p>
-          </div>
-        )}
+        <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 text-xs text-amber-700">
+          <p className="font-medium mb-1">📋 ขั้นตอน:</p>
+          <ol className="space-y-1 list-decimal list-inside">
+            <li>สแกน QR ด้านบนด้วยแอปธนาคาร</li>
+            <li>โอนตามจำนวนที่ระบุ</li>
+            <li>ถ่ายรูปสลิปอัพโหลด (ถ้ามี)</li>
+            <li>กด "แจ้งโอนเงินแล้ว"</li>
+            <li>รอแอดมินอนุมัติ → เครดิตเข้าทันที</li>
+          </ol>
+        </div>
       </main>
     </div>
   )

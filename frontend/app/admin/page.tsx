@@ -110,6 +110,22 @@ export default function AdminDashboard() {
         </div>
       )}
 
+      {/* Quick links */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {[
+          { href: '/admin/deposits',    icon: '💰', label: 'เติมเงิน / QR',   color: 'from-green-500 to-emerald-600' },
+          { href: '/admin/withdrawals', icon: '💸', label: 'ถอนเงิน',         color: 'from-orange-500 to-amber-600' },
+          { href: '/admin/users',       icon: '👥', label: 'สมาชิก',          color: 'from-blue-500 to-blue-700' },
+          { href: '/admin/analytics',   icon: '📊', label: 'Analytics',       color: 'from-purple-500 to-violet-700' },
+        ].map(item => (
+          <a key={item.href} href={item.href}
+            className={`bg-gradient-to-br ${item.color} text-white rounded-2xl p-4 flex items-center gap-3 hover:scale-105 transition-all shadow-sm`}>
+            <span className="text-2xl">{item.icon}</span>
+            <span className="font-semibold text-sm">{item.label}</span>
+          </a>
+        ))}
+      </div>
+
       {/* Per-shop revenue */}
       {revenueByShop && revenueByShop.length > 0 && (
         <div className="card">

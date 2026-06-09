@@ -26,6 +26,7 @@ import { leaderboardRoutes } from './routes/leaderboard'
 import { adminRoundRoutes } from './routes/admin.rounds'
 import { analyticsRoutes }     from './routes/analytics'
 import { notificationRoutes } from './routes/notifications'
+import { depositRoutes } from './routes/deposit'
 
 // Start background workers
 import './jobs/round.jobs'
@@ -105,6 +106,7 @@ async function bootstrap() {
   await app.register(adminRoundRoutes,    { prefix: '/api/admin' })
   await app.register(analyticsRoutes,      { prefix: '/api/analytics' })
   await app.register(notificationRoutes,   { prefix: '/api/notifications' })
+  await app.register(depositRoutes,        { prefix: '/api/deposit' })
 
   // ── Socket.io ────────────────────────────────────────────
   const httpServer = createServer(app.server as any)
