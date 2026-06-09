@@ -8,8 +8,8 @@ function generateOtp(): string {
 }
 
 async function sendSms(phone: string, code: string): Promise<void> {
-  if (process.env.NODE_ENV === 'development') {
-    // In dev mode, just log the OTP
+  if (!process.env.TWILIO_ACCOUNT_SID || !process.env.TWILIO_AUTH_TOKEN || !process.env.TWILIO_PHONE_NUMBER) {
+    // No Twilio configured — log OTP to console (dev/demo mode)
     console.log(`📱 OTP for ${phone}: ${code}`)
     return
   }
@@ -41,8 +41,8 @@ export async function sendOtp(phone: string): Promise<{ devCode?: string }> {
 
   await sendSms(phone, code)
 
-  // Return code only in development
-  if (process.env.NODE_ENV === 'development') {
+  // Return devCode if Twilio not configured (demo/dev mode)
+  if (!process.env.TWILIO_ACCOUNT_SID || !process.env.TWILIO_AUTH_TOKEN || !process.env.TWILIO_PHONE_NUMBER) {
     return { devCode: code }
   }
   return {}
