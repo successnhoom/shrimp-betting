@@ -9,6 +9,11 @@ import {
   setWebhook,
   isTelegramConfigured,
 } from '../services/telegram.service'
+import {
+  isCubixPayConfigured,
+  createPayin,
+  verifyWebhookSignature,
+} from '../services/cubixpay.service'
 
 export async function depositRoutes(app: FastifyInstance) {
 
@@ -34,7 +39,86 @@ export async function depositRoutes(app: FastifyInstance) {
     return reply.send({ message: 'QR updated' })
   })
 
-  // POST /api/deposit/request — customer submits deposit + optional slip
+  // POST /api/deposit/create — สร้าง QR PromptPay ผ่าน CubixPay (auto)
+  app.post('/create', { preHandler: [app.authenticate] }, async (request, reply) => {
+    const { userId } = request.user as { userId: string }
+    const { amount } = z.object({ amount: z.number().min(20).max(500000) }).parse(request.body)
+
+    if (!isCubixPayConfigured()) {
+      return reply.status(503).send({ error: 'CubixPay ยังไม่ได้ตั้งค่า' })
+    }
+
+    const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } })
+    const merchantOrderId = `DEP-${userId.slice(0, 8)}-${Date.now()}`
+    const callbackUrl = `${process.env.BACKEND_URL || 'https://shrimp-betting-production.up.railway.app'}/api/deposit/cubixpay-webhook`
+
+    const payin = await createPayin({
+      merchantOrderId,
+      amount,
+      callbackUrl,
+      customerName:  user.displayName,
+      customerPhone: user.phone,
+    })
+
+    // บันทึกรายการรอ
+    await prisma.depositRequest.create({
+      data: {
+        userId,
+        amount,
+        slipUrl:  payin.orderId,   // เก็บ CubixPay orderId ไว้ใน slipUrl field
+        status:   'pending',
+        note:     `cubixpay:${merchantOrderId}`,
+      },
+    })
+
+    return reply.send({
+      orderId:       payin.orderId,
+      qrCode:        payin.qrCode,
+      paymentUrl:    payin.paymentUrl,
+      amount,
+      expiryMinutes: payin.expiryMinutes,
+      expiredAt:     payin.expiredAt,
+    })
+  })
+
+  // POST /api/deposit/cubixpay-webhook — CubixPay callback (auto credit)
+  app.post('/cubixpay-webhook', async (request, reply) => {
+    const body = request.body as any
+
+    // Verify signature
+    if (!verifyWebhookSignature(body)) {
+      return reply.status(400).send({ error: 'Invalid signature' })
+    }
+
+    if (body.status !== 'success') {
+      return reply.send({ received: true })
+    }
+
+    // หา deposit request จาก note field
+    const req = await prisma.depositRequest.findFirst({
+      where: { note: { contains: body.merchant_order_id }, status: 'pending' },
+    })
+
+    if (!req) return reply.send({ received: true })
+
+    // Idempotency check
+    const already = await prisma.depositRequest.findFirst({
+      where: { note: { contains: body.merchant_order_id }, status: 'approved' },
+    })
+    if (already) return reply.send({ received: true })
+
+    // Credit wallet
+    await prisma.depositRequest.update({
+      where: { id: req.id },
+      data:  { status: 'approved', processedAt: new Date() },
+    })
+    await addDeposit(req.userId, Number(body.amount), `cubixpay-${body.order_id}`)
+
+    console.log(`✅ CubixPay deposit confirmed: ${body.order_id} — ${body.amount} THB → user ${req.userId}`)
+    return reply.send({ received: true })
+  })
+
+  // POST /api/deposit/request — customer submits deposit + optional slip (manual fallback)
   app.post('/request', { preHandler: [app.authenticate] }, async (request, reply) => {
     const { userId } = request.user as { userId: string }
     const { amount, slipBase64, slipMime } = z.object({
@@ -60,7 +144,6 @@ export async function depositRoutes(app: FastifyInstance) {
       slipMime,
     })
 
-    // Save telegram message id for later editing
     if (msgId) {
       await prisma.depositRequest.update({
         where: { id: req.id },
