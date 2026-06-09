@@ -39,7 +39,13 @@ export async function sendOtp(phone: string): Promise<{ devCode?: string }> {
     },
   })
 
-  await sendSms(phone, code)
+  try {
+    await sendSms(phone, code)
+  } catch (err: any) {
+    console.error('SMS send failed:', err?.message || err)
+    // Return devCode so user can still login even if SMS fails
+    return { devCode: code }
+  }
 
   // Return devCode if Twilio not configured (demo/dev mode)
   if (!process.env.TWILIO_ACCOUNT_SID || !process.env.TWILIO_AUTH_TOKEN || !process.env.TWILIO_PHONE_NUMBER) {

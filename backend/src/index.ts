@@ -48,25 +48,24 @@ const app = Fastify({
 
 async function bootstrap() {
   // ── Plugins ─────────────────────────────────────────────
-  // Add CORS headers manually on every request (belt-and-suspenders)
+  // CORS — handle preflight + inject headers on every response (including errors)
   app.addHook('onRequest', async (request, reply) => {
-    const origin = request.headers.origin
-    if (origin) {
-      reply.header('Access-Control-Allow-Origin', origin)
+    if (request.method === 'OPTIONS') {
+      reply.header('Access-Control-Allow-Origin', request.headers.origin || '*')
       reply.header('Access-Control-Allow-Credentials', 'true')
       reply.header('Access-Control-Allow-Methods', 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS')
       reply.header('Access-Control-Allow-Headers', 'Content-Type,Authorization')
-    }
-    if (request.method === 'OPTIONS') {
       return reply.status(204).send()
     }
   })
 
-  await app.register(cors, {
-    origin: true,
-    credentials: true,
-    allowedHeaders: ['Content-Type', 'Authorization'],
-    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  app.addHook('onSend', async (request, reply, payload) => {
+    const origin = request.headers.origin
+    if (origin) {
+      reply.header('Access-Control-Allow-Origin', origin)
+      reply.header('Access-Control-Allow-Credentials', 'true')
+    }
+    return payload
   })
 
   await app.register(jwt, {
