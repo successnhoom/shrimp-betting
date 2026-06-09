@@ -48,17 +48,22 @@ const app = Fastify({
 
 async function bootstrap() {
   // ── Plugins ─────────────────────────────────────────────
-  const allowedOrigins = process.env.CORS_ORIGIN
-    ? process.env.CORS_ORIGIN.split(',').map(o => o.trim())
-    : ['http://localhost:3000']
+  // Add CORS headers manually on every request (belt-and-suspenders)
+  app.addHook('onRequest', async (request, reply) => {
+    const origin = request.headers.origin
+    if (origin) {
+      reply.header('Access-Control-Allow-Origin', origin)
+      reply.header('Access-Control-Allow-Credentials', 'true')
+      reply.header('Access-Control-Allow-Methods', 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS')
+      reply.header('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+    }
+    if (request.method === 'OPTIONS') {
+      return reply.status(204).send()
+    }
+  })
 
   await app.register(cors, {
-    origin: (origin, cb) => {
-      if (!origin) return cb(null, true)
-      if (allowedOrigins.includes(origin)) return cb(null, true)
-      if (process.env.NODE_ENV !== 'production') return cb(null, true)
-      cb(new Error('Not allowed by CORS'), false)
-    },
+    origin: true,
     credentials: true,
     allowedHeaders: ['Content-Type', 'Authorization'],
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
