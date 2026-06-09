@@ -3,7 +3,8 @@ import { redis } from '../lib/redis'
 import { lockRound, settleRound } from '../services/round.service'
 import { prisma } from '../lib/prisma'
 
-const connection = { host: process.env.REDIS_HOST || 'localhost', port: parseInt(process.env.REDIS_PORT || '6379') }
+import IORedis from 'ioredis'
+const connection = new IORedis(process.env.REDIS_URL || 'redis://localhost:6379', { maxRetriesPerRequest: null })
 
 // Queue for scheduled round locks
 export const roundQueue = new Queue('rounds', { connection })

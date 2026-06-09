@@ -1,9 +1,7 @@
 import { Queue, Worker, Job } from 'bullmq'
+import IORedis from 'ioredis'
 
-const connection = {
-  host: process.env.REDIS_HOST || 'localhost',
-  port: parseInt(process.env.REDIS_PORT || '6379'),
-}
+const connection = new IORedis(process.env.REDIS_URL || 'redis://localhost:6379', { maxRetriesPerRequest: null })
 
 export const notificationQueue = new Queue('notifications', { connection })
 
