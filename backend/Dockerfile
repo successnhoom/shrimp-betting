@@ -24,4 +24,4 @@ COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY prisma ./prisma
 
 EXPOSE 3001
-CMD ["sh", "-c", "(npx prisma migrate deploy || true) && (npx prisma db seed || true) && node dist/index.js"]
+CMD ["sh", "-c", "echo '=== 1. migrate ===' && (npx prisma migrate deploy 2>&1 || echo 'migrate failed, continuing') && echo '=== 2. seed ===' && (npx prisma db seed 2>&1 || echo 'seed failed, continuing') && echo '=== 3. node ===' && node dist/index.js 2>&1"]
