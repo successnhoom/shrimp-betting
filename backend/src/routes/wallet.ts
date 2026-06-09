@@ -3,7 +3,6 @@ import { z } from 'zod'
 import Stripe from 'stripe'
 import { prisma } from '../lib/prisma'
 import { getWallet, requestWithdraw, addDeposit } from '../services/wallet.service'
-import { getPromptPayQRDataUrl } from '../services/promptpay.service'
 import { notifyDeposit } from '../jobs/notification.jobs'
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', { apiVersion: '2024-06-20' })
@@ -33,33 +32,48 @@ export async function walletRoutes(app: FastifyInstance) {
     })
   })
 
-  // POST /api/wallet/deposit  — create Stripe payment intent
-  app.post('/deposit', { preHandler: [app.authenticate] }, async (request, reply) => {
+  // POST /api/wallet/deposit/promptpay — Stripe PromptPay QR (auto)
+  app.post('/deposit/promptpay', { preHandler: [app.authenticate] }, async (request, reply) => {
     const { userId } = request.user as { userId: string }
     const { amount } = z.object({ amount: z.number().min(20).max(100000) }).parse(request.body)
 
     const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } })
 
+    // Create PaymentIntent with PromptPay
     const intent = await stripe.paymentIntents.create({
-      amount: Math.round(amount * 100), // Stripe uses satang
+      amount: Math.round(amount * 100), // satang
       currency: 'thb',
+      payment_method_types: ['promptpay'],
       metadata: { userId, amountThb: amount.toString() },
-      description: `Deposit for ${user.phone}`,
+      description: `Deposit ${amount} THB — ${user.phone}`,
     })
 
+    // Confirm immediately to get QR code
+    const confirmed = await stripe.paymentIntents.confirm(intent.id, {
+      payment_method: { type: 'promptpay' } as any,
+    })
+
+    // Save to DB for idempotency
     await prisma.paymentIntent.create({
       data: {
         userId,
-        stripeIntentId: intent.id,
+        stripeIntentId: confirmed.id,
         amount,
         status: 'pending',
       },
     })
 
+    // Extract QR code from next_action
+    const qrAction = (confirmed.next_action as any)?.promptpay_display_qr_code
+    const qrImageUrl = qrAction?.image_url_png || qrAction?.image_url_svg || null
+    const qrData = qrAction?.data || null
+
     return reply.send({
-      clientSecret: intent.client_secret,
-      paymentIntentId: intent.id,
+      paymentIntentId: confirmed.id,
       amount,
+      qrImageUrl,   // PNG image URL from Stripe CDN
+      qrData,       // Raw PromptPay string (for generating own QR if needed)
+      expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(), // 15 min
     })
   })
 
@@ -77,39 +91,6 @@ export async function walletRoutes(app: FastifyInstance) {
       }
       throw err
     }
-  })
-
-  // POST /api/wallet/deposit/promptpay  — PromptPay QR
-  app.post('/deposit/promptpay', { preHandler: [app.authenticate] }, async (request, reply) => {
-    const { userId } = request.user as { userId: string }
-    const { amount } = z.object({ amount: z.number().min(20).max(100000) }).parse(request.body)
-    const shopPhone = process.env.PROMPTPAY_PHONE || '0800000000'
-
-    const qrDataUrl = await getPromptPayQRDataUrl(shopPhone, amount)
-
-    // Create a pending transaction record (staff must confirm manually)
-    const pending = await prisma.transaction.create({
-      data: { userId, type: 'deposit', amount: 0, note: `PromptPay pending ${amount} THB` },
-    })
-
-    return reply.send({ qrDataUrl, amount, pendingId: pending.id, phone: shopPhone })
-  })
-
-  // POST /api/wallet/deposit/promptpay/confirm  — Admin confirms PromptPay
-  app.post('/deposit/promptpay/confirm', { preHandler: [app.authenticate] }, async (request, reply) => {
-    const { role } = request.user as { role: string }
-    if (!['staff', 'admin'].includes(role)) return reply.status(403).send({ error: 'Forbidden' })
-
-    const { userId, amount, note } = z.object({
-      userId: z.string(), amount: z.number().min(1), note: z.string().optional(),
-    }).parse(request.body)
-
-    await addDeposit(userId, amount, `promptpay-${Date.now()}`)
-
-    const user = await prisma.user.findUnique({ where: { id: userId }, select: { phone: true } })
-    if (user) await notifyDeposit(user.phone, amount)
-
-    return reply.send({ message: 'Deposit confirmed', userId, amount })
   })
 
   // GET /api/wallet/transactions
@@ -144,7 +125,7 @@ export async function walletRoutes(app: FastifyInstance) {
     })
   })
 
-  // POST /api/wallet/webhook/stripe  — Stripe webhook
+  // POST /api/wallet/webhook/stripe — auto credit on payment
   app.post('/webhook/stripe', {
     config: { rawBody: true },
   }, async (request, reply) => {
@@ -169,7 +150,7 @@ export async function walletRoutes(app: FastifyInstance) {
       const existing = await prisma.paymentIntent.findUnique({
         where: { stripeIntentId: intent.id },
       })
-      if (existing && existing.status === 'fulfilled') {
+      if (existing?.status === 'fulfilled') {
         return reply.send({ received: true })
       }
 
@@ -179,6 +160,9 @@ export async function walletRoutes(app: FastifyInstance) {
       })
 
       await addDeposit(userId, parseFloat(amountThb), intent.id)
+
+      const user = await prisma.user.findUnique({ where: { id: userId }, select: { phone: true } })
+      if (user) await notifyDeposit(user.phone, parseFloat(amountThb))
     }
 
     return reply.send({ received: true })
