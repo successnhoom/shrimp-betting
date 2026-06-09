@@ -48,7 +48,7 @@ export async function createPayin(opts: {
     }),
   })
 
-  const data = await res.json()
+  const data = await res.json() as any
   if (!data.success) {
     throw new Error(data.message || 'CubixPay createPayin failed')
   }
@@ -75,7 +75,7 @@ export async function getPayinStatus(merchantOrderId: string): Promise<{
     `${BASE}/payin/status.php?merchantOrderId=${encodeURIComponent(merchantOrderId)}`,
     { headers: { 'X-API-Key': API_KEY } }
   )
-  const data = await res.json()
+  const data = await res.json() as any
   if (!data.success) throw new Error(data.message || 'CubixPay status failed')
 
   return {
@@ -118,7 +118,7 @@ export async function createPayout(opts: {
     body: JSON.stringify(body),
   })
 
-  const data = await res.json()
+  const data = await res.json() as any
   if (!data.success) throw new Error(data.message || 'CubixPay createPayout failed')
   return { orderId: data.data.orderId, status: data.data.status }
 }

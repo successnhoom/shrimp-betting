@@ -1,5 +1,5 @@
--- CreateTable
-CREATE TABLE "deposit_requests" (
+-- CreateTable (safe: skip if already exists)
+CREATE TABLE IF NOT EXISTS "deposit_requests" (
     "id" TEXT NOT NULL,
     "user_id" TEXT NOT NULL,
     "amount" DECIMAL(12,2) NOT NULL,
@@ -13,20 +13,28 @@ CREATE TABLE "deposit_requests" (
     CONSTRAINT "deposit_requests_pkey" PRIMARY KEY ("id")
 );
 
--- CreateTable
-CREATE TABLE "app_settings" (
+-- CreateTable (safe: skip if already exists)
+CREATE TABLE IF NOT EXISTS "app_settings" (
     "key" TEXT NOT NULL,
     "value" TEXT NOT NULL,
-    "updated_at" TIMESTAMP(3) NOT NULL,
+    "updated_at" TIMESTAMP(3) NOT NULL DEFAULT NOW(),
 
     CONSTRAINT "app_settings_pkey" PRIMARY KEY ("key")
 );
 
--- CreateIndex
-CREATE INDEX "deposit_requests_user_id_idx" ON "deposit_requests"("user_id");
+-- CreateIndex (safe)
+CREATE INDEX IF NOT EXISTS "deposit_requests_user_id_idx" ON "deposit_requests"("user_id");
 
--- CreateIndex
-CREATE INDEX "deposit_requests_status_idx" ON "deposit_requests"("status");
+-- CreateIndex (safe)
+CREATE INDEX IF NOT EXISTS "deposit_requests_status_idx" ON "deposit_requests"("status");
 
--- AddForeignKey
-ALTER TABLE "deposit_requests" ADD CONSTRAINT "deposit_requests_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+-- AddForeignKey (safe: skip if already exists)
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.table_constraints
+    WHERE constraint_name = 'deposit_requests_user_id_fkey'
+  ) THEN
+    ALTER TABLE "deposit_requests" ADD CONSTRAINT "deposit_requests_user_id_fkey"
+      FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+  END IF;
+END $$;
