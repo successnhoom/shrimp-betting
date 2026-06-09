@@ -28,9 +28,14 @@ import { analyticsRoutes }     from './routes/analytics'
 import { notificationRoutes } from './routes/notifications'
 import { depositRoutes } from './routes/deposit'
 
-// Start background workers
-import './jobs/round.jobs'
-import './jobs/notification.jobs'
+// Start background workers (wrapped to prevent crash if Redis unavailable)
+try {
+  require('./jobs/round.jobs')
+  require('./jobs/notification.jobs')
+  console.log('✅ Background workers started')
+} catch (err) {
+  console.error('⚠️ Background workers failed (non-fatal):', err)
+}
 
 const app = Fastify({
   logger: {
