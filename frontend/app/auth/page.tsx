@@ -11,11 +11,11 @@ type Step = 'phone' | 'otp' | 'register'
 export default function AuthPage() {
   const router = useRouter()
   const { setAuth } = useAuthStore()
-  const [step, setStep]       = useState<Step>('phone')
-  const [phone, setPhone]     = useState('')
-  const [otpCode, setOtpCode] = useState('')   // เก็บ OTP ที่กรอกไว้
-  const [loading, setLoading] = useState(false)
-  const [devOtp, setDevOtp]   = useState<string>()
+  const [step, setStep]               = useState<Step>('phone')
+  const [phone, setPhone]             = useState('')
+  const [registerToken, setRegisterToken] = useState('')
+  const [loading, setLoading]         = useState(false)
+  const [devOtp, setDevOtp]           = useState<string>()
   const { register, handleSubmit, formState: { errors } } = useForm<any>()
 
   async function onSendOtp({ phone }: any) {
@@ -39,7 +39,7 @@ export default function AuthPage() {
       router.push(['staff','admin'].includes(res.data.user.role) ? '/staff' : '/bet')
     } catch (e: any) {
       if (e.response?.status === 404) {
-        setOtpCode(otp)   // เก็บ OTP ไว้ใช้ตอน register
+        setRegisterToken(e.response.data.registerToken || '')
         setStep('register')
       } else {
         toast.error('รหัส OTP ไม่ถูกต้อง')
@@ -48,18 +48,17 @@ export default function AuthPage() {
   }
 
   async function onRegister({ displayName }: any) {
+    if (!registerToken) { toast.error('กรุณาขอ OTP ใหม่'); setStep('phone'); return }
     setLoading(true)
     try {
-      // ใช้ OTP ที่กรอกไว้แล้ว — ไม่ส่งใหม่
-      const res = await authApi.register(phone, displayName, otpCode)
+      const res = await authApi.register(phone, displayName, registerToken)
       setAuth(res.data.token, res.data.user)
       toast.success('สมัครสำเร็จ! 🎉')
       router.push('/bet')
     } catch (e: any) {
       const msg = e.response?.data?.error || 'สมัครไม่สำเร็จ'
-      // ถ้า OTP หมดอายุ ให้กลับไปขอใหม่
-      if (e.response?.status === 401 || msg.includes('OTP')) {
-        toast.error('OTP หมดอายุ กรุณาขอรหัสใหม่')
+      if (e.response?.status === 400) {
+        toast.error('หมดเวลา กรุณาขอ OTP ใหม่')
         setStep('phone')
       } else {
         toast.error(msg)

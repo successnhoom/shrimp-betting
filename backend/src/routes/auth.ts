@@ -6,9 +6,9 @@ import { sendOtp, verifyOtp } from '../services/otp.service'
 const sendOtpSchema = z.object({ phone: z.string().min(9).max(15) })
 const verifyOtpSchema = z.object({ phone: z.string(), code: z.string().length(6) })
 const registerSchema = z.object({
-  phone: z.string().min(9).max(15),
-  displayName: z.string().min(1).max(100),
-  code: z.string().length(6),
+  phone:         z.string().min(9).max(15),
+  displayName:   z.string().min(1).max(100),
+  registerToken: z.string().min(10),
 })
 
 export async function authRoutes(app: FastifyInstance) {
@@ -27,7 +27,11 @@ export async function authRoutes(app: FastifyInstance) {
     if (!valid) return reply.status(400).send({ error: 'Invalid or expired OTP' })
 
     const user = await prisma.user.findUnique({ where: { phone } })
-    if (!user) return reply.status(404).send({ error: 'User not found. Please register first.' })
+    if (!user) {
+      // OTP valid แต่ยังไม่มี account — ส่ง registerToken แทนให้ใช้สมัครได้เลย
+      const registerToken = app.jwt.sign({ phone, purpose: 'register' }, { expiresIn: '10m' })
+      return reply.status(404).send({ error: 'User not found. Please register first.', registerToken })
+    }
     if (!user.isActive) return reply.status(403).send({ error: 'Account disabled' })
 
     const token = app.jwt.sign({ userId: user.id, role: user.role }, { expiresIn: process.env.JWT_EXPIRES_IN || '7d' })
@@ -40,10 +44,17 @@ export async function authRoutes(app: FastifyInstance) {
 
   // POST /api/auth/register  (new user)
   app.post('/register', async (request, reply) => {
-    const { phone, displayName, code } = registerSchema.parse(request.body)
+    const { phone, displayName, registerToken } = registerSchema.parse(request.body)
 
-    const valid = await verifyOtp(phone, code)
-    if (!valid) return reply.status(400).send({ error: 'Invalid or expired OTP' })
+    // ยืนยันด้วย registerToken (JWT) แทนการ verify OTP ซ้ำ
+    try {
+      const decoded = app.jwt.verify(registerToken) as any
+      if (decoded.phone !== phone || decoded.purpose !== 'register') {
+        return reply.status(400).send({ error: 'Invalid register token' })
+      }
+    } catch {
+      return reply.status(400).send({ error: 'Register token หมดอายุ กรุณาขอ OTP ใหม่' })
+    }
 
     const existing = await prisma.user.findUnique({ where: { phone } })
     if (existing) return reply.status(409).send({ error: 'Phone already registered. Please login.' })
