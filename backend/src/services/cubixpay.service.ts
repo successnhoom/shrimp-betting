@@ -1,21 +1,28 @@
 import crypto from 'crypto'
 
-const API_KEY    = process.env.CUBIXPAY_API_KEY    || ''
-const SECRET_KEY = process.env.CUBIXPAY_SECRET_KEY || ''
-const BASE       = 'https://api.cubixpay.co/v1'
+const BASE = 'https://api.cubixpay.co/v1'
+
+function getKeys() {
+  return {
+    apiKey:    process.env.CUBIXPAY_API_KEY    || '',
+    secretKey: process.env.CUBIXPAY_SECRET_KEY || '',
+  }
+}
 
 export function isCubixPayConfigured() {
-  return !!API_KEY && !!SECRET_KEY
+  const { apiKey, secretKey } = getKeys()
+  return !!apiKey && !!secretKey
 }
 
 /** สร้าง HMAC-SHA256 signature สำหรับ Payout */
 function makeSignature(body: Record<string, any>, timestamp: number): string {
+  const { secretKey } = getKeys()
   const data = { ...body, timestamp }
   const sorted = Object.keys(data)
     .sort()
     .reduce((acc, k) => { acc[k] = data[k]; return acc }, {} as any)
   const signString = new URLSearchParams(sorted).toString()
-  return crypto.createHmac('sha256', SECRET_KEY).update(signString).digest('hex')
+  return crypto.createHmac('sha256', secretKey).update(signString).digest('hex')
 }
 
 /** สร้าง QR PromptPay สำหรับลูกค้าเติมเงิน */
@@ -33,11 +40,12 @@ export async function createPayin(opts: {
   expiredAt: string
   paymentType: string
 }> {
+  const { apiKey } = getKeys()
   const res = await fetch(`${BASE}/payin/create.php`, {
     method:  'POST',
     headers: {
       'Content-Type': 'application/json',
-      'X-API-Key':    API_KEY,
+      'X-API-Key':    apiKey,
     },
     body: JSON.stringify({
       merchantOrderId: opts.merchantOrderId,
@@ -71,9 +79,10 @@ export async function getPayinStatus(merchantOrderId: string): Promise<{
   netAmount: number
   completedAt: string | null
 }> {
+  const { apiKey } = getKeys()
   const res = await fetch(
     `${BASE}/payin/status.php?merchantOrderId=${encodeURIComponent(merchantOrderId)}`,
-    { headers: { 'X-API-Key': API_KEY } }
+    { headers: { 'X-API-Key': apiKey } }
   )
   const data = await res.json() as any
   if (!data.success) throw new Error(data.message || 'CubixPay status failed')
@@ -96,6 +105,7 @@ export async function createPayout(opts: {
   accountName: string
   callbackUrl: string
 }): Promise<{ orderId: string; status: string }> {
+  const { apiKey } = getKeys()
   const timestamp = Math.floor(Date.now() / 1000)
   const body = {
     merchantOrderId: opts.merchantOrderId,
@@ -111,7 +121,7 @@ export async function createPayout(opts: {
     method:  'POST',
     headers: {
       'Content-Type': 'application/json',
-      'X-API-Key':    API_KEY,
+      'X-API-Key':    apiKey,
       'X-Timestamp':  String(timestamp),
       'X-Signature':  signature,
     },
