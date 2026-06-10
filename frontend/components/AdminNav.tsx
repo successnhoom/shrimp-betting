@@ -16,6 +16,7 @@ const NAV = [
   { href: '/admin/shops',        label: 'ร้านค้า',    icon: '🏪', group: 'manage' },
   { href: '/admin/staff',        label: 'พนักงาน',    icon: '👷', group: 'manage' },
   { href: '/admin/users',        label: 'สมาชิก',     icon: '👥', group: 'manage' },
+  { href: '/admin/deposits',     label: 'เติมเงิน',   icon: '💳', group: 'finance', depositBadge: true },
   { href: '/admin/revenue',      label: 'รายรับ',     icon: '💰', group: 'finance' },
   { href: '/admin/withdrawals',  label: 'ถอนเงิน',    icon: '💸', group: 'finance', badge: true },
   { href: '/admin/qr',           label: 'QR Code',    icon: '📱', group: 'tools' },
@@ -30,7 +31,7 @@ const GROUPS: Record<string, string> = {
   tools:   'เครื่องมือ',
 }
 
-const BOTTOM_NAV = ['/admin', '/admin/analytics', '/admin/rounds', '/admin/revenue', '/admin/withdrawals']
+const BOTTOM_NAV = ['/admin', '/admin/deposits', '/admin/rounds', '/admin/revenue', '/admin/withdrawals']
 
 export function AdminNav() {
   const pathname = usePathname()
@@ -43,6 +44,13 @@ export function AdminNav() {
     refetchInterval: 30_000,
   })
   const pendingCount = withdrawalData?.length ?? 0
+
+  const { data: depositData } = useQuery({
+    queryKey: ['adminDeposits', 'pending'],
+    queryFn:  () => import('@/lib/api').then(m => m.api.get('/deposit/requests?status=pending').then(r => r.data)),
+    refetchInterval: 15_000,
+  })
+  const pendingDepositCount = depositData?.length ?? 0
 
   const grouped = Object.entries(GROUPS).map(([key, label]) => ({
     key, label, items: NAV.filter(n => n.group === key),
@@ -107,6 +115,12 @@ export function AdminNav() {
                           <span className="min-w-[18px] h-[18px] flex items-center justify-center rounded-full text-[10px] font-black animate-pulse"
                             style={{ background:'#ef4444', color:'white', boxShadow:'0 0 8px rgba(239,68,68,0.5)', padding:'0 4px' }}>
                             {pendingCount}
+                          </span>
+                        )}
+                        {(n as any).depositBadge && pendingDepositCount > 0 && (
+                          <span className="min-w-[18px] h-[18px] flex items-center justify-center rounded-full text-[10px] font-black animate-pulse"
+                            style={{ background:'#f59e0b', color:'white', boxShadow:'0 0 8px rgba(245,158,11,0.5)', padding:'0 4px' }}>
+                            {pendingDepositCount}
                           </span>
                         )}
                         {active && !((n as any).badge && pendingCount > 0) && (
