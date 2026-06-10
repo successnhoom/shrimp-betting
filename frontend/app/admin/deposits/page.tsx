@@ -73,14 +73,20 @@ export default function AdminDepositsPage() {
 
   async function setupTelegram() {
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_URL?.replace('/api', '') || ''
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || ''
+      const baseUrl = apiUrl.endsWith('/api') ? apiUrl.slice(0, -4) : apiUrl.replace('/api', '')
       if (!baseUrl) { toast.error('ไม่พบ API URL'); return }
-      const res = await api.post('/deposit/setup-telegram', {
-        baseUrl: baseUrl.replace('/api', '')
-      })
-      if (res.data.ok) toast.success('ตั้ง Telegram Webhook สำเร็จ!')
+      const res = await api.post('/deposit/setup-telegram', { baseUrl })
+      if (res.data.ok) toast.success('ตั้ง Telegram Webhook สำเร็จ! ✅')
       else toast.error(JSON.stringify(res.data))
-    } catch { toast.error('ไม่สำเร็จ') }
+    } catch (e: any) { toast.error(e?.response?.data?.error || 'ไม่สำเร็จ') }
+  }
+
+  async function testTelegram() {
+    try {
+      await api.post('/deposit/test-telegram', {})
+      toast.success('ส่ง test message แล้ว — เช็ค Telegram ได้เลย 📱')
+    } catch (e: any) { toast.error(e?.response?.data?.error || 'ส่งไม่สำเร็จ') }
   }
 
   return (
@@ -114,12 +120,18 @@ export default function AdminDepositsPage() {
                 {uploading ? '⏳ กำลังอัพโหลด...' : '✅ บันทึก QR'}
               </button>
             )}
-            <div className="pt-2 border-t border-gray-100">
-              <p className="text-xs text-gray-500 mb-2">ตั้ง Telegram Webhook (ทำครั้งแรกครั้งเดียว)</p>
-              <button onClick={setupTelegram}
-                className="px-3 py-1.5 bg-blue-50 border border-blue-200 text-blue-700 text-xs rounded-lg hover:bg-blue-100">
-                🤖 ตั้งค่า Telegram Bot
-              </button>
+            <div className="pt-2 border-t border-gray-100 space-y-2">
+              <p className="text-xs text-gray-500">Telegram Bot</p>
+              <div className="flex gap-2 flex-wrap">
+                <button onClick={setupTelegram}
+                  className="px-3 py-1.5 bg-blue-50 border border-blue-200 text-blue-700 text-xs rounded-lg hover:bg-blue-100">
+                  🤖 ตั้งค่า Webhook
+                </button>
+                <button onClick={testTelegram}
+                  className="px-3 py-1.5 bg-green-50 border border-green-200 text-green-700 text-xs rounded-lg hover:bg-green-100">
+                  📨 ทดสอบส่งข้อความ
+                </button>
+              </div>
             </div>
           </div>
         </div>

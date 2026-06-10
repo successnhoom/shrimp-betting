@@ -296,4 +296,24 @@ export async function depositRoutes(app: FastifyInstance) {
     const result = await setWebhook(webhookUrl)
     return reply.send(result)
   })
+
+  // POST /api/deposit/test-telegram — ส่ง test message ไป Telegram
+  app.post('/test-telegram', { preHandler: [app.authenticate] }, async (request, reply) => {
+    const { role } = request.user as { role: string }
+    if (role !== 'admin') return reply.status(403).send({ error: 'Forbidden' })
+
+    if (!isTelegramConfigured()) {
+      return reply.status(503).send({ error: 'Telegram ยังไม่ได้ตั้งค่า (TELEGRAM_BOT_TOKEN หรือ TELEGRAM_ADMIN_CHAT_ID ว่าง)' })
+    }
+
+    const msgId = await sendDepositNotification({
+      requestId:   'TEST-0000',
+      userPhone:   '0812345678',
+      displayName: 'ทดสอบระบบ',
+      amount:      999,
+    })
+
+    if (msgId) return reply.send({ ok: true, message: 'ส่งข้อความทดสอบแล้ว ✅', messageId: msgId })
+    return reply.status(500).send({ error: 'ส่งไม่สำเร็จ — ตรวจสอบ TELEGRAM_BOT_TOKEN และ TELEGRAM_ADMIN_CHAT_ID' })
+  })
 }
