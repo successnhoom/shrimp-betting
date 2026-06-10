@@ -13,7 +13,6 @@ export default function AuthPage() {
   const { setAuth } = useAuthStore()
   const [step, setStep]               = useState<Step>('phone')
   const [phone, setPhone]             = useState('')
-  const [registerToken, setRegisterToken] = useState('')
   const [loading, setLoading]         = useState(false)
   const [devOtp, setDevOtp]           = useState<string>()
   const { register, handleSubmit, formState: { errors } } = useForm<any>()
@@ -39,7 +38,6 @@ export default function AuthPage() {
       router.push(['staff','admin'].includes(res.data.user.role) ? '/staff' : '/bet')
     } catch (e: any) {
       if (e.response?.status === 404) {
-        setRegisterToken(e.response.data.registerToken || '')
         setStep('register')
       } else {
         toast.error('รหัส OTP ไม่ถูกต้อง')
@@ -48,10 +46,9 @@ export default function AuthPage() {
   }
 
   async function onRegister({ displayName }: any) {
-    if (!registerToken) { toast.error('กรุณาขอ OTP ใหม่'); setStep('phone'); return }
     setLoading(true)
     try {
-      const res = await authApi.register(phone, displayName, registerToken)
+      const res = await authApi.register(phone, displayName)
       setAuth(res.data.token, res.data.user)
       toast.success('สมัครสำเร็จ! 🎉')
       router.push('/bet')

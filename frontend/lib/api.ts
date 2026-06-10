@@ -30,8 +30,8 @@ api.interceptors.response.use(
 export const authApi = {
   sendOtp:  (phone: string) => api.post('/auth/send-otp', { phone }),
   login:    (phone: string, code: string) => api.post('/auth/login', { phone, code }),
-  register: (phone: string, displayName: string, registerToken: string) =>
-    api.post('/auth/register', { phone, displayName, registerToken }),
+  register: (phone: string, displayName: string) =>
+    api.post('/auth/register', { phone, displayName }),
   me: () => api.get('/auth/me'),
 }
 

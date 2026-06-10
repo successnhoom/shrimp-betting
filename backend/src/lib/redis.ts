@@ -25,6 +25,17 @@ export async function deleteOtp(phone: string) {
   await redis.del(`${OTP_PREFIX}${phone}`)
 }
 
+// Phone verified for registration (5 min)
+export async function setPhoneVerified(phone: string) {
+  await redis.set(`reg:${phone}`, '1', 'EX', 300)
+}
+export async function checkAndClearPhoneVerified(phone: string): Promise<boolean> {
+  const val = await redis.get(`reg:${phone}`)
+  if (!val) return false
+  await redis.del(`reg:${phone}`)
+  return true
+}
+
 // Round state helpers (cache live odds)
 export async function setRoundOdds(roundId: string, even: string, odd: string) {
   await redis.hset(`round:${roundId}:odds`, { even, odd })
