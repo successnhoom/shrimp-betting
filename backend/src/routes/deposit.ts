@@ -56,8 +56,8 @@ export async function depositRoutes(app: FastifyInstance) {
       merchantOrderId,
       amount,
       callbackUrl,
-      customerName:  user.displayName,
-      customerPhone: user.phone,
+      customerName:  user.displayName || undefined,
+      customerPhone: user.phone       || undefined,
     })
 
     // บันทึกรายการรอ
@@ -65,16 +65,18 @@ export async function depositRoutes(app: FastifyInstance) {
       data: {
         userId,
         amount,
-        slipUrl:  payin.orderId,   // เก็บ CubixPay orderId ไว้ใน slipUrl field
-        status:   'pending',
-        note:     `cubixpay:${merchantOrderId}`,
+        slipUrl: payin.orderId,   // เก็บ CubixPay orderId ไว้ใน slipUrl field
+        status:  'pending',
+        note:    `cubixpay:${merchantOrderId}`,
       },
     })
 
     return reply.send({
       orderId:       payin.orderId,
+      paymentType:   payin.paymentType,
       qrCode:        payin.qrCode,
       paymentUrl:    payin.paymentUrl,
+      pool:          payin.pool,       // บัญชีโอนเงิน (transfer provider)
       amount,
       expiryMinutes: payin.expiryMinutes,
       expiredAt:     payin.expiredAt,
@@ -84,17 +86,21 @@ export async function depositRoutes(app: FastifyInstance) {
   // POST /api/deposit/cubixpay-webhook — CubixPay callback (auto credit)
   app.post('/cubixpay-webhook', async (request, reply) => {
     const body = request.body as any
-    const rawBody = ((request as any).rawBody as Buffer)?.toString() || JSON.stringify(body)
-    const signature = (request.headers['x-signature'] as string) || ''
 
-    // Verify signature
-    if (!verifyWebhookSignature(rawBody, signature)) {
+    // CubixPay webhook payload (flat, not nested under data):
+    // { order_id, merchant_order_id, type, amount, fee, net_amount, status,
+    //   sender_bank, sender_name, signature, timestamp, provider_ref, currency }
+    const txn = body.data || body
+
+    // Verify signature: SHA256(order_id + amount + status + callback_secret)
+    const sig = txn.signature || body.signature || ''
+    if (!verifyWebhookSignature(txn.order_id, txn.amount, txn.status, sig)) {
+      console.warn('[CubixPay webhook] Invalid signature — order_id:', txn.order_id)
       return reply.status(400).send({ error: 'Invalid signature' })
     }
 
-    // CubixPay payload: { event, data: { order_id, merchant_order_id, type, status, amount }, timestamp }
-    const txn = body.data || body
     if (txn.status !== 'success' || txn.type !== 'payin') {
+      console.log(`[CubixPay webhook] Ignored: status=${txn.status} type=${txn.type}`)
       return reply.send({ received: true })
     }
 

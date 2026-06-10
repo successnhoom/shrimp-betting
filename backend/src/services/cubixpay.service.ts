@@ -25,7 +25,14 @@ function makeSignature(body: Record<string, any>, timestamp: number): string {
   return crypto.createHmac('sha256', secretKey).update(signString).digest('hex')
 }
 
-/** สร้าง QR PromptPay สำหรับลูกค้าเติมเงิน */
+export type PayinPool = {
+  bankCode:      string
+  bankName:      string
+  accountName:   string
+  accountNumber: string
+}
+
+/** สร้างรายการฝากเงิน — รองรับทั้ง QR provider (qrCode) และ Transfer/Pool provider (pool) */
 export async function createPayin(opts: {
   merchantOrderId: string
   amount: number
@@ -34,11 +41,12 @@ export async function createPayin(opts: {
   customerPhone?: string
 }): Promise<{
   orderId: string
-  qrCode: string | null
-  paymentUrl: string | null
+  paymentType: string       // 'qr' | 'transfer'
+  qrCode: string | null     // QR provider
+  paymentUrl: string | null // QR provider
+  pool: PayinPool | null    // Transfer/Pool provider
   expiryMinutes: number
   expiredAt: string
-  paymentType: string
 }> {
   const { apiKey } = getKeys()
   const res = await fetch(`${BASE}/payin/create.php`, {
@@ -57,17 +65,26 @@ export async function createPayin(opts: {
   })
 
   const data = await res.json() as any
+  console.log('[CubixPay createPayin] status:', res.status, 'body:', JSON.stringify(data))
   if (!data.success) {
-    throw new Error(data.message || 'CubixPay createPayin failed')
+    throw new Error(data.message || `CubixPay createPayin failed (${data.error_code || res.status})`)
   }
 
+  const d = data.data
+  const rawPool = d.pool || null
   return {
-    orderId:       data.data.orderId,
-    qrCode:        data.data.qrCode        || null,
-    paymentUrl:    data.data.paymentUrl    || null,
-    expiryMinutes: data.data.expiryMinutes || 15,
-    expiredAt:     data.data.expiredAt,
-    paymentType:   data.data.paymentType   || 'qr',
+    orderId:       d.orderId,
+    paymentType:   d.paymentType   || 'qr',
+    qrCode:        d.qrCode        || null,
+    paymentUrl:    d.paymentUrl    || null,
+    expiryMinutes: d.expiryMinutes || 15,
+    expiredAt:     d.expiredAt,
+    pool: rawPool ? {
+      bankCode:      rawPool.bankCode    || '',
+      bankName:      rawPool.bankName    || '',
+      accountName:   rawPool.accountName || '',
+      accountNumber: rawPool.accountNumber || '',
+    } : null,
   }
 }
 
@@ -133,13 +150,24 @@ export async function createPayout(opts: {
   return { orderId: data.data.orderId, status: data.data.status }
 }
 
-/** Verify webhook signature จาก CubixPay — X-Signature header (HMAC-SHA256 of raw body) */
-export function verifyWebhookSignature(rawBody: string, signature: string): boolean {
+/**
+ * Verify webhook signature จาก CubixPay
+ * Algorithm: SHA256(order_id + amount + status + callback_secret)
+ * Docs: https://merchant.cubixpay.co/pages/api-docs#overview
+ */
+export function verifyWebhookSignature(
+  orderId: string,
+  amount: number | string,
+  status: string,
+  signature: string,
+): boolean {
   const secret = process.env.CUBIXPAY_WEBHOOK_SECRET || ''
   if (!secret) {
     console.warn('⚠️ CUBIXPAY_WEBHOOK_SECRET not set — skipping signature check')
     return true
   }
-  const expected = crypto.createHmac('sha256', secret).update(rawBody).digest('hex')
+  const expected = crypto.createHash('sha256')
+    .update(`${orderId}${amount}${status}${secret}`)
+    .digest('hex')
   return expected === signature
 }

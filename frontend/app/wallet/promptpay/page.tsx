@@ -7,10 +7,19 @@ import Link from 'next/link'
 
 const PRESETS = [100, 200, 500, 1000, 2000, 5000]
 
+type PayinPool = {
+  bankCode:      string
+  bankName:      string
+  accountName:   string
+  accountNumber: string
+}
+
 type QRData = {
   orderId:       string
-  qrCode:        string | null   // CubixPay QR image URL
-  paymentUrl:    string | null
+  paymentType:   string          // 'qr' | 'transfer'
+  qrCode:        string | null   // QR provider
+  paymentUrl:    string | null   // QR provider
+  pool:          PayinPool | null // Transfer provider
   amount:        number
   expiredAt:     string
   expiryMinutes: number
@@ -139,7 +148,7 @@ export default function PromptPayPage() {
           </div>
         )}
 
-        {/* Step 2: Show QR */}
+        {/* Step 2: Show payment info */}
         {qrData && !paid && (
           <div className="card space-y-4 text-center">
             <div className="flex items-center justify-between">
@@ -151,41 +160,82 @@ export default function PromptPayPage() {
               </span>
             </div>
 
-            {/* QR Image จาก CubixPay */}
-            {qrData.qrCode ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={qrData.qrCode}
-                alt="PromptPay QR"
-                className="w-64 mx-auto rounded-2xl border-4 border-gray-100 shadow"
-              />
-            ) : qrData.paymentUrl ? (
-              <div className="space-y-2">
-                <div className="w-64 h-64 mx-auto rounded-2xl border-4 border-dashed border-blue-200 flex flex-col items-center justify-center gap-2">
-                  <p className="text-4xl">🔗</p>
-                  <p className="text-gray-500 text-sm px-4">กดลิ้งก์ด้านล่างเพื่อชำระ</p>
+            {/* QR Provider */}
+            {qrData.paymentType !== 'transfer' && (
+              <>
+                {qrData.qrCode ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={qrData.qrCode}
+                    alt="PromptPay QR"
+                    className="w-64 mx-auto rounded-2xl border-4 border-gray-100 shadow"
+                  />
+                ) : qrData.paymentUrl ? (
+                  <div className="space-y-2">
+                    <div className="w-64 h-64 mx-auto rounded-2xl border-4 border-dashed border-blue-200 flex flex-col items-center justify-center gap-2">
+                      <p className="text-4xl">🔗</p>
+                      <p className="text-gray-500 text-sm px-4">กดลิ้งก์ด้านล่างเพื่อชำระ</p>
+                    </div>
+                    <a href={qrData.paymentUrl} target="_blank" rel="noreferrer"
+                      className="btn-primary w-full block text-center">
+                      🔗 เปิดหน้าชำระเงิน
+                    </a>
+                  </div>
+                ) : (
+                  <div className="w-64 h-64 mx-auto rounded-2xl border-4 border-dashed border-gray-200 flex items-center justify-center">
+                    <p className="text-gray-400 text-sm">ไม่สามารถแสดง QR ได้</p>
+                  </div>
+                )}
+                <div className="bg-green-50 border border-green-100 rounded-xl p-3 text-left">
+                  <p className="text-green-700 text-sm font-medium">📋 ขั้นตอน:</p>
+                  <ol className="text-green-600 text-sm mt-1 space-y-1 list-decimal list-inside">
+                    <li>เปิดแอปธนาคาร</li>
+                    <li>เลือก &ldquo;พร้อมเพย์&rdquo; หรือ &ldquo;สแกน QR&rdquo;</li>
+                    <li>สแกน QR ด้านบน</li>
+                    <li>ยืนยันจำนวน {qrData.amount.toLocaleString()} ฿</li>
+                    <li>เครดิตเข้าอัตโนมัติ ✅</li>
+                  </ol>
                 </div>
-                <a href={qrData.paymentUrl} target="_blank" rel="noreferrer"
-                  className="btn-primary w-full block text-center">
-                  🔗 เปิดหน้าชำระเงิน
-                </a>
-              </div>
-            ) : (
-              <div className="w-64 h-64 mx-auto rounded-2xl border-4 border-dashed border-gray-200 flex items-center justify-center">
-                <p className="text-gray-400 text-sm">ไม่สามารถแสดง QR ได้</p>
-              </div>
+              </>
             )}
 
-            <div className="bg-green-50 border border-green-100 rounded-xl p-3 text-left">
-              <p className="text-green-700 text-sm font-medium">📋 ขั้นตอน:</p>
-              <ol className="text-green-600 text-sm mt-1 space-y-1 list-decimal list-inside">
-                <li>เปิดแอปธนาคาร</li>
-                <li>เลือก "พร้อมเพย์" หรือ "สแกน QR"</li>
-                <li>สแกน QR ด้านบน</li>
-                <li>ยืนยันจำนวน {qrData.amount.toLocaleString()} ฿</li>
-                <li>เครดิตเข้าอัตโนมัติ ✅</li>
-              </ol>
-            </div>
+            {/* Transfer/Pool Provider */}
+            {qrData.paymentType === 'transfer' && qrData.pool && (
+              <>
+                <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 text-left space-y-2">
+                  <p className="font-bold text-blue-800 text-center">🏦 โอนเงินเข้าบัญชีนี้</p>
+                  <div className="bg-white rounded-xl p-3 space-y-2 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">ธนาคาร</span>
+                      <span className="font-semibold">{qrData.pool.bankName || qrData.pool.bankCode}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">เลขบัญชี</span>
+                      <span className="font-bold text-lg tracking-wider">{qrData.pool.accountNumber}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">ชื่อบัญชี</span>
+                      <span className="font-semibold">{qrData.pool.accountName}</span>
+                    </div>
+                    <div className="flex justify-between border-t pt-2">
+                      <span className="text-gray-500">จำนวน</span>
+                      <span className="font-bold text-blue-600 text-lg">{qrData.amount.toLocaleString()} ฿</span>
+                    </div>
+                  </div>
+                  <p className="text-red-600 text-xs text-center font-medium">
+                    ⚠️ โอนตรงยอดนี้เท่านั้น อย่าปัดเศษ
+                  </p>
+                </div>
+                <div className="bg-green-50 border border-green-100 rounded-xl p-3 text-left">
+                  <p className="text-green-700 text-sm font-medium">📋 ขั้นตอน:</p>
+                  <ol className="text-green-600 text-sm mt-1 space-y-1 list-decimal list-inside">
+                    <li>เปิดแอปธนาคาร → โอนเงิน</li>
+                    <li>โอนเข้าบัญชีด้านบนยอด {qrData.amount.toLocaleString()} ฿</li>
+                    <li>เครดิตเข้าอัตโนมัติ ✅</li>
+                  </ol>
+                </div>
+              </>
+            )}
 
             <div className="flex items-center gap-2 text-gray-400 text-sm justify-center">
               <div className="w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
