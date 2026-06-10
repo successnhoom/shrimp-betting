@@ -92,20 +92,23 @@ export async function depositRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: 'Invalid signature' })
     }
 
-    if (body.status !== 'success') {
+    // CubixPay payload: { event, data: { order_id, merchant_order_id, type, status, amount }, timestamp }
+    const txn = body.data || body
+    if (txn.status !== 'success' || txn.type !== 'payin') {
       return reply.send({ received: true })
     }
 
+    const merchantOrderId = txn.merchant_order_id
+
     // หา deposit request จาก note field
     const req = await prisma.depositRequest.findFirst({
-      where: { note: { contains: body.merchant_order_id }, status: 'pending' },
+      where: { note: { contains: merchantOrderId }, status: 'pending' },
     })
-
     if (!req) return reply.send({ received: true })
 
     // Idempotency check
     const already = await prisma.depositRequest.findFirst({
-      where: { note: { contains: body.merchant_order_id }, status: 'approved' },
+      where: { note: { contains: merchantOrderId }, status: 'approved' },
     })
     if (already) return reply.send({ received: true })
 
@@ -114,9 +117,9 @@ export async function depositRoutes(app: FastifyInstance) {
       where: { id: req.id },
       data:  { status: 'approved', processedAt: new Date() },
     })
-    await addDeposit(req.userId, Number(body.amount), `cubixpay-${body.order_id}`)
+    await addDeposit(req.userId, Number(txn.amount), `cubixpay-${txn.order_id}`)
 
-    console.log(`✅ CubixPay deposit confirmed: ${body.order_id} — ${body.amount} THB → user ${req.userId}`)
+    console.log(`✅ CubixPay deposit confirmed: ${txn.order_id} — ${txn.amount} THB → user ${req.userId}`)
     return reply.send({ received: true })
   })
 
