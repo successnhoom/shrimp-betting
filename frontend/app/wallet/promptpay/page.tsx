@@ -55,7 +55,11 @@ export default function PromptPayPage() {
       toast.success('ส่งคำขอเติมเงินแล้ว รอแอดมินอนุมัติ')
       setTimeout(() => router.push('/wallet'), 3000)
     } catch (err: any) {
-      toast.error(err?.response?.data?.error || 'เกิดข้อผิดพลาด')
+      console.error('Deposit error:', err?.response?.status, err?.response?.data)
+      const msg = err?.response?.data?.error
+        || err?.response?.data?.message
+        || (err?.response?.status ? `Error ${err.response.status}` : 'เชื่อมต่อไม่ได้ กรุณาลองใหม่')
+      toast.error(msg)
     } finally {
       setLoading(false)
     }
