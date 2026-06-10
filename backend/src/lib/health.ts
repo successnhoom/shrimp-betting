@@ -31,4 +31,11 @@ export async function registerHealthRoutes(app: FastifyInstance) {
   app.get('/health/ready', async (_req, reply) => {
     return reply.send({ ready: true })
   })
+
+  // Returns outbound IP of this server (for CubixPay IP whitelist)
+  app.get('/health/outbound-ip', async (_req, reply) => {
+    const res = await fetch('https://api.ipify.org?format=json')
+    const data = await res.json() as any
+    return reply.send({ ip: data.ip })
+  })
 }
