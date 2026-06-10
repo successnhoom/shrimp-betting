@@ -128,6 +128,9 @@ async function bootstrap() {
   await app.register(notificationRoutes,   { prefix: '/api/notifications' })
   await app.register(depositRoutes,        { prefix: '/api/deposit' })
 
+  // DEBUG: log CubixPay config status (remove after confirming)
+  console.log(`[DEBUG] CUBIXPAY_API_KEY set: ${!!process.env.CUBIXPAY_API_KEY} (len=${process.env.CUBIXPAY_API_KEY?.length || 0})`)
+
   // ── Socket.io ────────────────────────────────────────────
   const httpServer = createServer(app.server as any)
   initSocket(httpServer)
