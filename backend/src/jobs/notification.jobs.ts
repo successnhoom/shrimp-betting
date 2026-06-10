@@ -2,6 +2,7 @@ import { Queue, Worker, Job } from 'bullmq'
 import IORedis from 'ioredis'
 
 const connection = new IORedis(process.env.REDIS_URL || 'redis://localhost:6379', { maxRetriesPerRequest: null })
+connection.on('error', (err) => console.error('[BullMQ notifications] Redis error (non-fatal):', err.message))
 
 export const notificationQueue = new Queue('notifications', { connection })
 

@@ -5,6 +5,7 @@ import { prisma } from '../lib/prisma'
 
 import IORedis from 'ioredis'
 const connection = new IORedis(process.env.REDIS_URL || 'redis://localhost:6379', { maxRetriesPerRequest: null })
+connection.on('error', (err) => console.error('[BullMQ rounds] Redis error (non-fatal):', err.message))
 
 // Queue for scheduled round locks
 export const roundQueue = new Queue('rounds', { connection })

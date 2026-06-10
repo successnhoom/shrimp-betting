@@ -3,7 +3,6 @@ import Fastify from 'fastify'
 import cors from '@fastify/cors'
 import jwt from '@fastify/jwt'
 import rateLimit from '@fastify/rate-limit'
-import { createServer } from 'http'
 import { initSocket } from './lib/socket'
 import { prisma } from './lib/prisma'
 import { redis } from './lib/redis'
@@ -128,16 +127,15 @@ async function bootstrap() {
   await app.register(notificationRoutes,   { prefix: '/api/notifications' })
   await app.register(depositRoutes,        { prefix: '/api/deposit' })
 
-  // ── Socket.io ────────────────────────────────────────────
-  const httpServer = createServer(app.server as any)
-  initSocket(httpServer)
-
   // ── Connect services ─────────────────────────────────────
   await prisma.$connect()
   await redis.connect()
 
   const port = parseInt(process.env.PORT || '3001')
   await app.listen({ port, host: '0.0.0.0' })
+
+  // ── Socket.io — must init AFTER listen so app.server is ready ──
+  initSocket(app.server as any)
   console.log(`🦐 Shrimp Betting API running on port ${port}`)
   console.log(`   ENV: ${process.env.NODE_ENV}`)
 }
