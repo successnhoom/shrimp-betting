@@ -50,7 +50,7 @@ export async function depositRoutes(app: FastifyInstance) {
 
     const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } })
     const merchantOrderId = `DEP-${userId.slice(0, 8)}-${Date.now()}`
-    const callbackUrl = `${process.env.BACKEND_URL || 'https://shrimp-betting-production.up.railway.app'}/api/deposit/cubixpay-webhook`
+    const callbackUrl = `${process.env.BACKEND_URL || 'https://shrimp-betting-production-66ac.up.railway.app'}/api/deposit/cubixpay-webhook`
 
     const payin = await createPayin({
       merchantOrderId,
@@ -84,9 +84,11 @@ export async function depositRoutes(app: FastifyInstance) {
   // POST /api/deposit/cubixpay-webhook — CubixPay callback (auto credit)
   app.post('/cubixpay-webhook', async (request, reply) => {
     const body = request.body as any
+    const rawBody = ((request as any).rawBody as Buffer)?.toString() || JSON.stringify(body)
+    const signature = (request.headers['x-signature'] as string) || ''
 
     // Verify signature
-    if (!verifyWebhookSignature(body)) {
+    if (!verifyWebhookSignature(rawBody, signature)) {
       return reply.status(400).send({ error: 'Invalid signature' })
     }
 

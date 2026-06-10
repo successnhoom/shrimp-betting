@@ -123,16 +123,13 @@ export async function createPayout(opts: {
   return { orderId: data.data.orderId, status: data.data.status }
 }
 
-/** Verify webhook signature จาก CubixPay callback */
-export function verifyWebhookSignature(payload: {
-  order_id: string
-  amount: number | string
-  status: string
-  signature: string
-}): boolean {
-  const expected = crypto
-    .createHash('sha256')
-    .update(`${payload.order_id}${payload.amount}${payload.status}${SECRET_KEY}`)
-    .digest('hex')
-  return expected === payload.signature
+/** Verify webhook signature จาก CubixPay — X-Signature header (HMAC-SHA256 of raw body) */
+export function verifyWebhookSignature(rawBody: string, signature: string): boolean {
+  const secret = process.env.CUBIXPAY_WEBHOOK_SECRET || ''
+  if (!secret) {
+    console.warn('⚠️ CUBIXPAY_WEBHOOK_SECRET not set — skipping signature check')
+    return true
+  }
+  const expected = crypto.createHmac('sha256', secret).update(rawBody).digest('hex')
+  return expected === signature
 }
