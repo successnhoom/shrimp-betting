@@ -2,9 +2,18 @@ import { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { prisma } from '../lib/prisma'
 
+async function requireAdminOrStaff(request: any, reply: any) {
+  const { role } = request.user as { role: string }
+  if (!['admin', 'staff'].includes(role)) {
+    return reply.status(403).send({ error: 'Forbidden' })
+  }
+}
+
 export async function analyticsRoutes(app: FastifyInstance) {
+  const preHandler = [app.authenticate, requireAdminOrStaff]
+
   // ── GET /api/analytics/volume  — hourly volume for last 24h ──────────────
-  app.get('/volume', { preHandler: [app.authenticate] }, async (request, reply) => {
+  app.get('/volume', { preHandler }, async (request, reply) => {
     const { shopId } = z.object({ shopId: z.string().optional() }).parse(request.query)
 
     const since = new Date(Date.now() - 24 * 3600 * 1000)
@@ -39,7 +48,7 @@ export async function analyticsRoutes(app: FastifyInstance) {
   })
 
   // ── GET /api/analytics/daily  — daily stats for last N days ──────────────
-  app.get('/daily', { preHandler: [app.authenticate] }, async (request, reply) => {
+  app.get('/daily', { preHandler }, async (request, reply) => {
     const { shopId, days = 14 } = z.object({
       shopId: z.string().optional(),
       days:   z.coerce.number().default(14),
@@ -78,7 +87,7 @@ export async function analyticsRoutes(app: FastifyInstance) {
   })
 
   // ── GET /api/analytics/top-bettors  — top 10 by volume ───────────────────
-  app.get('/top-bettors', { preHandler: [app.authenticate] }, async (request, reply) => {
+  app.get('/top-bettors', { preHandler }, async (request, reply) => {
     const { shopId, days = 30 } = z.object({
       shopId: z.string().optional(),
       days:   z.coerce.number().default(30),
@@ -113,7 +122,7 @@ export async function analyticsRoutes(app: FastifyInstance) {
   })
 
   // ── GET /api/analytics/even-odd  — win rate even vs odd over time ─────────
-  app.get('/even-odd', { preHandler: [app.authenticate] }, async (request, reply) => {
+  app.get('/even-odd', { preHandler }, async (request, reply) => {
     const { shopId, days = 30 } = z.object({
       shopId: z.string().optional(),
       days:   z.coerce.number().default(30),

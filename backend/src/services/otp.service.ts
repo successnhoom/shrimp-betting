@@ -11,7 +11,7 @@ function hasVerify(): boolean {
   return !!(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_VERIFY_SERVICE_SID)
 }
 
-export async function sendOtp(phone: string): Promise<{ devCode?: string }> {
+export async function sendOtp(phone: string): Promise<void> {
   const to = toE164(phone)
 
   // ── Twilio Verify (production) ────────────────────────────
@@ -21,14 +21,18 @@ export async function sendOtp(phone: string): Promise<{ devCode?: string }> {
       await twilio.verify.v2.services(process.env.TWILIO_VERIFY_SERVICE_SID!)
         .verifications.create({ to, channel: 'sms' })
       console.log(`📱 Twilio Verify sent to ${to}`)
-      return {}
+      return
     } catch (err: any) {
       console.error('Twilio Verify send failed:', err?.message || err)
-      // Fall through to devCode mode
+      // In production, fail hard — never fall through to devCode mode
+      if (process.env.NODE_ENV === 'production') {
+        throw new Error('ไม่สามารถส่ง OTP ได้ในขณะนี้ กรุณาลองใหม่')
+      }
+      // In dev/test, fall through to local code mode
     }
   }
 
-  // ── Dev / fallback mode ───────────────────────────────────
+  // ── Dev / local mode only ─────────────────────────────────
   const code = Math.floor(100000 + Math.random() * 900000).toString()
   await setOtp(phone, code, OTP_EXPIRY)
 
@@ -36,8 +40,8 @@ export async function sendOtp(phone: string): Promise<{ devCode?: string }> {
     data: { phone, code, expiresAt: new Date(Date.now() + OTP_EXPIRY * 1000) },
   })
 
+  // SEC-09 fix: log to server console only, never return in HTTP response
   console.log(`📱 [DEV] OTP for ${phone}: ${code}`)
-  return { devCode: code }
 }
 
 export async function verifyOtp(phone: string, code: string): Promise<boolean> {

@@ -51,6 +51,16 @@ export default function AdminShops() {
     qc.invalidateQueries({ queryKey: ['adminShops'] })
   }
 
+  async function copyStaffLink(shop: any) {
+    const url = `${window.location.origin}/staff/join/${shop.id}`
+    try {
+      await navigator.clipboard.writeText(url)
+      toast.success(`คัดลอกลิงก์หลังบ้านร้าน "${shop.name}" แล้ว`)
+    } catch {
+      toast.error(`คัดลอกไม่ได้ — ลิงก์คือ: ${url}`)
+    }
+  }
+
   return (
     <div className="space-y-4 max-w-4xl">
       <div className="flex items-center justify-between">
@@ -85,6 +95,10 @@ export default function AdminShops() {
                   <p className="text-xs text-gray-400 mt-1 font-mono">ID: {shop.id}</p>
                 </div>
                 <div className="flex gap-2 shrink-0 ml-4">
+                  <button onClick={() => copyStaffLink(shop)}
+                    className="px-3 py-1.5 text-sm border border-blue-300 text-blue-600 rounded-xl hover:bg-blue-50">
+                    🔗 ลิงก์หลังบ้าน
+                  </button>
                   <button onClick={() => { setSelected(shop); setModal('tables') }}
                     className="px-3 py-1.5 text-sm border border-gray-300 rounded-xl hover:bg-gray-50">
                     + โต๊ะ

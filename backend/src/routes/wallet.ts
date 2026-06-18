@@ -20,7 +20,7 @@ export async function walletRoutes(app: FastifyInstance) {
     return reply.send({
       balance: wallet.balance.toNumber(),
       lockedAmount: wallet.lockedAmount.toNumber(),
-      available: wallet.balance.toNumber(),
+      available: wallet.balance.toNumber() - wallet.lockedAmount.toNumber(),
       transactions: transactions.map(t => ({
         id: t.id,
         type: t.type,

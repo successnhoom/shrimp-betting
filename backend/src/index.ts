@@ -10,7 +10,7 @@ import { registerHealthRoutes } from './lib/health'
 import { registerErrorHandler } from './lib/errors'
 import { registerHelmet } from './lib/helmet'
 import { initSentry } from './lib/sentry'
-import { validateEnv } from './lib/env'
+import { validateEnv, getEnv } from './lib/env'
 import { registerRequestLogger } from './lib/logger'
 
 import { authRoutes } from './routes/auth'
@@ -27,15 +27,6 @@ import { analyticsRoutes }     from './routes/analytics'
 import { notificationRoutes } from './routes/notifications'
 import { depositRoutes } from './routes/deposit'
 
-// Start background workers (wrapped to prevent crash if Redis unavailable)
-try {
-  require('./jobs/round.jobs')
-  require('./jobs/notification.jobs')
-  console.log('✅ Background workers started')
-} catch (err) {
-  console.error('⚠️ Background workers failed (non-fatal):', err)
-}
-
 const app = Fastify({
   logger: {
     transport: process.env.NODE_ENV === 'development'
@@ -46,29 +37,22 @@ const app = Fastify({
 })
 
 async function bootstrap() {
-  // ── Plugins ─────────────────────────────────────────────
-  // CORS — handle preflight + inject headers on every response (including errors)
-  app.addHook('onRequest', async (request, reply) => {
-    if (request.method === 'OPTIONS') {
-      reply.header('Access-Control-Allow-Origin', request.headers.origin || '*')
-      reply.header('Access-Control-Allow-Credentials', 'true')
-      reply.header('Access-Control-Allow-Methods', 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS')
-      reply.header('Access-Control-Allow-Headers', 'Content-Type,Authorization')
-      return reply.status(204).send()
-    }
-  })
+  const env = getEnv()
 
-  app.addHook('onSend', async (request, reply, payload) => {
-    const origin = request.headers.origin
-    if (origin) {
-      reply.header('Access-Control-Allow-Origin', origin)
-      reply.header('Access-Control-Allow-Credentials', 'true')
-    }
-    return payload
+  // ── CORS — allowlist only ────────────────────────────────
+  const allowedOrigins = env.CORS_ORIGIN.split(',').map(o => o.trim()).filter(Boolean)
+  await app.register(cors, {
+    origin: (origin, cb) => {
+      if (!origin || allowedOrigins.includes(origin)) return cb(null, true)
+      cb(new Error('Not allowed by CORS'), false)
+    },
+    credentials: true,
+    methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
   })
 
   await app.register(jwt, {
-    secret: process.env.JWT_SECRET || 'change-this-secret-in-production',
+    secret: env.JWT_SECRET,
   })
 
   await app.register(rateLimit, {
@@ -131,13 +115,22 @@ async function bootstrap() {
   await prisma.$connect()
   await redis.connect()
 
-  const port = parseInt(process.env.PORT || '3001')
+  // ── Background workers — start AFTER Redis is connected ──
+  try {
+    require('./jobs/round.jobs')
+    require('./jobs/notification.jobs')
+    console.log('✅ Background workers started')
+  } catch (err) {
+    console.error('⚠️ Background workers failed (non-fatal):', err)
+  }
+
+  const port = env.PORT
   await app.listen({ port, host: '0.0.0.0' })
 
   // ── Socket.io — must init AFTER listen so app.server is ready ──
   initSocket(app.server as any)
   console.log(`🦐 Shrimp Betting API running on port ${port}`)
-  console.log(`   ENV: ${process.env.NODE_ENV}`)
+  console.log(`   ENV: ${env.NODE_ENV}`)
 }
 
 // Graceful shutdown

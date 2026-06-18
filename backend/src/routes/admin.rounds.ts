@@ -70,6 +70,52 @@ export async function adminRoundRoutes(app: FastifyInstance) {
     })
   })
 
+  // GET /api/admin/rounds/stats  — aggregate stats
+  // NOTE: must be registered BEFORE /rounds/:id to avoid being shadowed (BUG-07)
+  app.get('/rounds/stats', { preHandler }, async (request, reply) => {
+    const { shopId, days = 30 } = z.object({
+      shopId: z.string().optional(),
+      days:   z.coerce.number().default(30),
+    }).parse(request.query)
+
+    const since = new Date(Date.now() - days * 86400000)
+    const where: any = { openedAt: { gte: since } }
+    if (shopId) where.shopId = shopId
+
+    const [total, settled, cancelled, openNow] = await Promise.all([
+      prisma.round.count({ where }),
+      prisma.round.count({ where: { ...where, status: 'settled' } }),
+      prisma.round.count({ where: { ...where, status: 'cancelled' } }),
+      prisma.round.count({ where: { status: { in: ['open', 'locked'] } } }),
+    ])
+
+    const volumeAgg = await prisma.round.aggregate({
+      where: { ...where, status: 'settled' },
+      _sum: { totalEven: true, totalOdd: true },
+    })
+
+    const evenVol = volumeAgg._sum.totalEven?.toNumber() ?? 0
+    const oddVol  = volumeAgg._sum.totalOdd?.toNumber()  ?? 0
+    const totalVol = evenVol + oddVol
+
+    const [evenWins, oddWins] = await Promise.all([
+      prisma.round.count({ where: { ...where, status: 'settled', result: 'even' } }),
+      prisma.round.count({ where: { ...where, status: 'settled', result: 'odd'  } }),
+    ])
+
+    return reply.send({
+      period: `${days} วัน`,
+      totalRounds:  total,
+      settledRounds:settled,
+      cancelledRounds: cancelled,
+      activeNow:    openNow,
+      totalVolume:  totalVol,
+      totalRevenue: totalVol * 0.10,
+      evenWins, oddWins,
+      evenWinRate: settled > 0 ? ((evenWins / settled) * 100).toFixed(1) : '0',
+    })
+  })
+
   // GET /api/admin/rounds/:id  — round detail with all bets
   app.get('/rounds/:id', { preHandler }, async (request, reply) => {
     const { id } = request.params as { id: string }
@@ -130,49 +176,4 @@ export async function adminRoundRoutes(app: FastifyInstance) {
     })
   })
 
-  // GET /api/admin/rounds/stats  — aggregate stats
-  app.get('/rounds/stats', { preHandler }, async (request, reply) => {
-    const { shopId, days = 30 } = z.object({
-      shopId: z.string().optional(),
-      days:   z.coerce.number().default(30),
-    }).parse(request.query)
-
-    const since = new Date(Date.now() - days * 86400000)
-    const where: any = { openedAt: { gte: since } }
-    if (shopId) where.shopId = shopId
-
-    const [total, settled, cancelled, openNow] = await Promise.all([
-      prisma.round.count({ where }),
-      prisma.round.count({ where: { ...where, status: 'settled' } }),
-      prisma.round.count({ where: { ...where, status: 'cancelled' } }),
-      prisma.round.count({ where: { status: { in: ['open', 'locked'] } } }),
-    ])
-
-    const volumeAgg = await prisma.round.aggregate({
-      where: { ...where, status: 'settled' },
-      _sum: { totalEven: true, totalOdd: true },
-    })
-
-    const evenVol = volumeAgg._sum.totalEven?.toNumber() ?? 0
-    const oddVol  = volumeAgg._sum.totalOdd?.toNumber()  ?? 0
-    const totalVol = evenVol + oddVol
-
-    // Even vs Odd result distribution
-    const [evenWins, oddWins] = await Promise.all([
-      prisma.round.count({ where: { ...where, status: 'settled', result: 'even' } }),
-      prisma.round.count({ where: { ...where, status: 'settled', result: 'odd'  } }),
-    ])
-
-    return reply.send({
-      period: `${days} วัน`,
-      totalRounds:  total,
-      settledRounds:settled,
-      cancelledRounds: cancelled,
-      activeNow:    openNow,
-      totalVolume:  totalVol,
-      totalRevenue: totalVol * 0.10,
-      evenWins, oddWins,
-      evenWinRate: settled > 0 ? ((evenWins / settled) * 100).toFixed(1) : '0',
-    })
-  })
 }

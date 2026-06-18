@@ -57,10 +57,13 @@ export const betApi = {
 
 // Staff
 export const staffApi = {
-  openRound:   (shopId: string) => api.post('/staff/rounds/open', { shopId }),
+  openRound:   (shopId: string, autoLockSeconds?: number | null) =>
+    api.post('/staff/rounds/open', { shopId, autoLockSeconds }),
+  lockRound:   (roundId: string) => api.post(`/staff/rounds/${roundId}/lock`),
   settleRound: (roundId: string, result: 'even' | 'odd') =>
     api.post(`/staff/rounds/${roundId}/settle`, { result }),
-  nextRound:   (roundId: string) => api.post(`/staff/rounds/${roundId}/next`),
+  nextRound:   (roundId: string, autoLockSeconds?: number | null) =>
+    api.post(`/staff/rounds/${roundId}/next`, { autoLockSeconds }),
   stopRound:   (roundId: string) => api.post(`/staff/rounds/${roundId}/stop`),
   summary:     (shopId: string) => api.get(`/staff/shops/${shopId}/summary`),
   rounds:      (shopId: string) => api.get(`/staff/shops/${shopId}/rounds`),

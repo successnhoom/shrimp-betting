@@ -4,6 +4,7 @@ import { BetSide, BetStatus, RoundStatus } from '@prisma/client'
 import { prisma } from '../lib/prisma'
 import { openRound, settleRound, stopRound, lockRound } from '../services/round.service'
 import { unlockAndRefund } from '../services/wallet.service'
+import { assertShopAccess } from '../lib/authz'
 
 async function requireStaffOrAdmin(request: any, reply: any) {
   const { role } = request.user as { role: string }
@@ -19,6 +20,7 @@ export async function staffRoutes(app: FastifyInstance) {
 
   app.get('/shops/:shopId/rounds', { preHandler }, async (request, reply) => {
     const { shopId } = request.params as { shopId: string }
+    if (!(await assertShopAccess(request, reply, shopId))) return
     const rounds = await prisma.round.findMany({
       where: { shopId },
       orderBy: { openedAt: 'desc' },
@@ -37,14 +39,32 @@ export async function staffRoutes(app: FastifyInstance) {
 
   app.post('/rounds/open', { preHandler }, async (request, reply) => {
     const { userId } = request.user as { userId: string }
-    const { shopId } = z.object({ shopId: z.string().min(1) }).parse(request.body)
+    const { shopId, autoLockSeconds } = z.object({
+      shopId: z.string().min(1),
+      // ไม่ส่งมา / null = staff ปิดรับแทงเอง, ส่งมาเป็นวินาที = ตั้งเวลาปิดอัตโนมัติ
+      autoLockSeconds: z.number().int().min(10).max(3600).optional().nullable(),
+    }).parse(request.body)
+    if (!(await assertShopAccess(request, reply, shopId))) return
     try {
-      const round = await openRound(shopId, userId)
+      const round = await openRound(shopId, userId, autoLockSeconds)
       return reply.status(201).send({ roundId: round.id, status: round.status, openedAt: round.openedAt })
     } catch (err: any) {
       if (err.message === 'ROUND_ALREADY_OPEN') return reply.status(409).send({ error: 'A round is already open' })
       throw err
     }
+  })
+
+  // ── Lock (ปิดรับแทงเอง โดยยังไม่ออกผล) ──────────────────────
+
+  app.post('/rounds/:id/lock', { preHandler }, async (request, reply) => {
+    const { id } = request.params as { id: string }
+    const round = await prisma.round.findUniqueOrThrow({ where: { id } })
+    if (!(await assertShopAccess(request, reply, round.shopId))) return
+    if (round.status !== RoundStatus.open) {
+      return reply.status(400).send({ error: 'Round is not open' })
+    }
+    await lockRound(id, round.shopId)
+    return reply.send({ message: 'ปิดรับแทงแล้ว', roundId: id, status: 'locked' })
   })
 
   // ── Settle ─────────────────────────────────────────────────
@@ -53,6 +73,7 @@ export async function staffRoutes(app: FastifyInstance) {
     const { id } = request.params as { id: string }
     const { result } = z.object({ result: z.enum(['even', 'odd']) }).parse(request.body)
     const round = await prisma.round.findUniqueOrThrow({ where: { id } })
+    if (!(await assertShopAccess(request, reply, round.shopId))) return
     if (round.status === RoundStatus.open) await lockRound(id, round.shopId)
     try {
       const settlement = await settleRound(id, result as BetSide, round.shopId)
@@ -68,11 +89,15 @@ export async function staffRoutes(app: FastifyInstance) {
   app.post('/rounds/:id/next', { preHandler }, async (request, reply) => {
     const { userId } = request.user as { userId: string }
     const { id } = request.params as { id: string }
+    const { autoLockSeconds } = z.object({
+      autoLockSeconds: z.number().int().min(10).max(3600).optional().nullable(),
+    }).parse(request.body ?? {})
     const prev = await prisma.round.findUniqueOrThrow({ where: { id } })
+    if (!(await assertShopAccess(request, reply, prev.shopId))) return
     if (prev.status !== RoundStatus.settled && prev.status !== RoundStatus.cancelled) {
       return reply.status(400).send({ error: 'Previous round must be settled first' })
     }
-    const round = await openRound(prev.shopId, userId)
+    const round = await openRound(prev.shopId, userId, autoLockSeconds)
     return reply.status(201).send({ roundId: round.id, status: round.status, openedAt: round.openedAt })
   })
 
@@ -81,6 +106,7 @@ export async function staffRoutes(app: FastifyInstance) {
   app.post('/rounds/:id/stop', { preHandler }, async (request, reply) => {
     const { id } = request.params as { id: string }
     const round = await prisma.round.findUniqueOrThrow({ where: { id } })
+    if (!(await assertShopAccess(request, reply, round.shopId))) return
     if (round.status === RoundStatus.settled) return reply.status(400).send({ error: 'Already settled' })
     await stopRound(id, round.shopId)
     return reply.send({ message: 'Round stopped, all bets refunded', roundId: id })
@@ -140,6 +166,8 @@ export async function staffRoutes(app: FastifyInstance) {
 
   app.get('/rounds/:id/bets', { preHandler }, async (request, reply) => {
     const { id } = request.params as { id: string }
+    const round = await prisma.round.findUniqueOrThrow({ where: { id } })
+    if (!(await assertShopAccess(request, reply, round.shopId))) return
     const bets = await prisma.bet.findMany({
       where: { roundId: id },
       include: { user: { select: { displayName: true, phone: true } } },
@@ -165,6 +193,7 @@ export async function staffRoutes(app: FastifyInstance) {
 
   app.get('/shops/:shopId/summary', { preHandler }, async (request, reply) => {
     const { shopId } = request.params as { shopId: string }
+    if (!(await assertShopAccess(request, reply, shopId))) return
     const today = new Date(); today.setHours(0, 0, 0, 0)
     const rounds = await prisma.round.findMany({
       where: { shopId, openedAt: { gte: today } },
@@ -191,30 +220,41 @@ export async function staffRoutes(app: FastifyInstance) {
     })
   })
 
-  // ── Pending PromptPay deposits for this shop ───────────────
+  // ── Pending deposits for this shop's customers ────────────
 
   app.get('/shops/:shopId/pending-deposits', { preHandler }, async (request, reply) => {
     const { shopId } = request.params as { shopId: string }
+    if (!(await assertShopAccess(request, reply, shopId))) return
 
-    // Find staff's shop's customers — show recent pending PromptPay requests
-    const pending = await prisma.transaction.findMany({
-      where: { note: { startsWith: 'PromptPay pending' }, amount: 0 },
+    // BUG-08 fix: filter by users who have bet in this shop
+    const shopBettors = await prisma.bet.findMany({
+      where:    { round: { shopId } },
+      select:   { userId: true },
+      distinct: ['userId'],
+    })
+    const shopUserIds = shopBettors.map((b: { userId: string }) => b.userId)
+
+    const pending = await (prisma as any).depositRequest.findMany({
+      where:   { userId: { in: shopUserIds }, status: 'pending' },
       include: { user: { select: { id: true, displayName: true, phone: true } } },
       orderBy: { createdAt: 'desc' },
       take: 30,
     })
 
-    return reply.send(pending.map(t => ({
-      id: t.id,
-      user: t.user,
-      amount: parseFloat(t.note?.replace('PromptPay pending ', '') || '0'),
-      createdAt: t.createdAt,
+    return reply.send(pending.map((d: any) => ({
+      id:        d.id,
+      user:      d.user,
+      amount:    d.amount.toNumber(),
+      createdAt: d.createdAt,
     })))
   })
 
-  // ── Member credit adjustment (staff can use) ───────────────
+  // ── Member credit adjustment (admin only) ─────────────────
+  // SEC-06 fix: restricted to admin — staff could previously adjust any user's balance
 
-  app.post('/members/:userId/adjust', { preHandler }, async (request, reply) => {
+  app.post('/members/:userId/adjust', { preHandler: [app.authenticate, async (req: any, rep: any) => {
+    if (req.user.role !== 'admin') return rep.status(403).send({ error: 'Admin only' })
+  }] }, async (request, reply) => {
     const { userId: staffId } = request.user as { userId: string }
     const { userId } = request.params as { userId: string }
     const { amount, note } = z.object({
@@ -248,18 +288,33 @@ export async function staffRoutes(app: FastifyInstance) {
   // ── Member list (staff can search) ────────────────────────
 
   app.get('/members', { preHandler }, async (request, reply) => {
-    const { q = '', page = 1 } = z.object({
-      q:    z.string().optional().default(''),
-      page: z.coerce.number().default(1),
+    const { q = '', page = 1, shopId } = z.object({
+      q:      z.string().optional().default(''),
+      page:   z.coerce.number().default(1),
+      shopId: z.string().min(1),
     }).parse(request.query)
 
+    if (!(await assertShopAccess(request, reply, shopId))) return
+
     const limit = 20
-    const where: any = q ? {
-      OR: [
-        { phone:       { contains: q } },
-        { displayName: { contains: q, mode: 'insensitive' } },
-      ],
-    } : {}
+
+    // Scope to users who have actually bet in this shop (same pattern as pending-deposits)
+    const shopBettors = await prisma.bet.findMany({
+      where:    { round: { shopId } },
+      select:   { userId: true },
+      distinct: ['userId'],
+    })
+    const shopUserIds = shopBettors.map((b: { userId: string }) => b.userId)
+
+    const where: any = {
+      id: { in: shopUserIds },
+      ...(q ? {
+        OR: [
+          { phone:       { contains: q } },
+          { displayName: { contains: q, mode: 'insensitive' } },
+        ],
+      } : {}),
+    }
 
     const [users, total] = await Promise.all([
       prisma.user.findMany({

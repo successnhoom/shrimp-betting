@@ -106,23 +106,19 @@ export async function depositRoutes(app: FastifyInstance) {
 
     const merchantOrderId = txn.merchant_order_id
 
-    // หา deposit request จาก note field
-    const req = await prisma.depositRequest.findFirst({
+    // Atomic idempotency: only update if still pending (prevents double-credit)
+    const updated = await prisma.depositRequest.updateMany({
       where: { note: { contains: merchantOrderId }, status: 'pending' },
+      data:  { status: 'approved', processedAt: new Date() },
+    })
+    if (updated.count === 0) return reply.send({ received: true })
+
+    // Fetch approved record for userId/amount
+    const req = await prisma.depositRequest.findFirst({
+      where: { note: { contains: merchantOrderId }, status: 'approved' },
     })
     if (!req) return reply.send({ received: true })
 
-    // Idempotency check
-    const already = await prisma.depositRequest.findFirst({
-      where: { note: { contains: merchantOrderId }, status: 'approved' },
-    })
-    if (already) return reply.send({ received: true })
-
-    // Credit wallet
-    await prisma.depositRequest.update({
-      where: { id: req.id },
-      data:  { status: 'approved', processedAt: new Date() },
-    })
     await addDeposit(req.userId, Number(txn.amount), `cubixpay-${txn.order_id}`)
 
     console.log(`✅ CubixPay deposit confirmed: ${txn.order_id} — ${txn.amount} THB → user ${req.userId}`)
@@ -203,13 +199,17 @@ export async function depositRoutes(app: FastifyInstance) {
     if (!['admin', 'staff'].includes(role)) return reply.status(403).send({ error: 'Forbidden' })
 
     const { id } = request.params as { id: string }
-    const req = await prisma.depositRequest.findUniqueOrThrow({ where: { id } })
-    if (req.status !== 'pending') return reply.status(400).send({ error: 'Already processed' })
 
-    await prisma.depositRequest.update({
-      where: { id },
+    // Fetch first so we have amount/telegramMsgId regardless of race result
+    const req = await prisma.depositRequest.findUniqueOrThrow({ where: { id } })
+
+    // Atomic compare-and-swap: only proceed if still pending (prevents double-credit)
+    const updated = await prisma.depositRequest.updateMany({
+      where: { id, status: 'pending' },
       data:  { status: 'approved', processedAt: new Date() },
     })
+    if (updated.count === 0) return reply.status(400).send({ error: 'Already processed' })
+
     await addDeposit(req.userId, req.amount.toNumber(), `deposit-${id}`)
 
     const admin = await prisma.user.findUnique({ where: { id: adminId }, select: { displayName: true } })
@@ -227,12 +227,13 @@ export async function depositRoutes(app: FastifyInstance) {
 
     const { id } = request.params as { id: string }
     const req = await prisma.depositRequest.findUniqueOrThrow({ where: { id } })
-    if (req.status !== 'pending') return reply.status(400).send({ error: 'Already processed' })
 
-    await prisma.depositRequest.update({
-      where: { id },
+    // Atomic: only reject if still pending
+    const updated = await prisma.depositRequest.updateMany({
+      where: { id, status: 'pending' },
       data:  { status: 'rejected', processedAt: new Date() },
     })
+    if (updated.count === 0) return reply.status(400).send({ error: 'Already processed' })
 
     const admin = await prisma.user.findUnique({ where: { id: adminId }, select: { displayName: true } })
     if (req.telegramMsgId) {
@@ -244,6 +245,15 @@ export async function depositRoutes(app: FastifyInstance) {
 
   // POST /api/deposit/telegram-webhook — Telegram callback handler
   app.post('/telegram-webhook', async (request, reply) => {
+    // SEC-04: Verify Telegram webhook secret token
+    const telegramSecret = process.env.TELEGRAM_WEBHOOK_SECRET || ''
+    if (telegramSecret) {
+      const headerToken = request.headers['x-telegram-bot-api-secret-token'] as string
+      if (headerToken !== telegramSecret) {
+        return reply.status(403).send({ ok: false })
+      }
+    }
+
     const body = request.body as any
     const cb   = body?.callback_query
     if (!cb) return reply.send({ ok: true })
@@ -252,27 +262,37 @@ export async function depositRoutes(app: FastifyInstance) {
     if (!requestId) return reply.send({ ok: true })
 
     try {
+      // Fetch first so we have amount/telegramMsgId for later use
       const req = await prisma.depositRequest.findUnique({ where: { id: requestId } })
-      if (!req || req.status !== 'pending') {
-        await answerCallback(cb.id, '⚠️ คำขอนี้ถูกดำเนินการแล้ว')
+      if (!req) {
+        await answerCallback(cb.id, '⚠️ ไม่พบคำขอนี้')
         return reply.send({ ok: true })
       }
 
       if (action === 'approve') {
-        await prisma.depositRequest.update({
-          where: { id: requestId },
+        // Atomic compare-and-swap: prevent double-credit from concurrent approvals
+        const updated = await prisma.depositRequest.updateMany({
+          where: { id: requestId, status: 'pending' },
           data:  { status: 'approved', processedAt: new Date() },
         })
+        if (updated.count === 0) {
+          await answerCallback(cb.id, '⚠️ คำขอนี้ถูกดำเนินการแล้ว')
+          return reply.send({ ok: true })
+        }
         await addDeposit(req.userId, req.amount.toNumber(), `tg-${requestId}`)
         await answerCallback(cb.id, `✅ อนุมัติ ${req.amount.toNumber().toLocaleString()} ฿ แล้ว`)
         if (req.telegramMsgId) {
           await updateDepositMessage(req.telegramMsgId, 'approved', req.amount.toNumber(), cb.from?.first_name)
         }
       } else if (action === 'reject') {
-        await prisma.depositRequest.update({
-          where: { id: requestId },
+        const updated = await prisma.depositRequest.updateMany({
+          where: { id: requestId, status: 'pending' },
           data:  { status: 'rejected', processedAt: new Date() },
         })
+        if (updated.count === 0) {
+          await answerCallback(cb.id, '⚠️ คำขอนี้ถูกดำเนินการแล้ว')
+          return reply.send({ ok: true })
+        }
         await answerCallback(cb.id, '❌ ปฏิเสธแล้ว')
         if (req.telegramMsgId) {
           await updateDepositMessage(req.telegramMsgId, 'rejected', req.amount.toNumber(), cb.from?.first_name)
@@ -280,7 +300,6 @@ export async function depositRoutes(app: FastifyInstance) {
       }
     } catch (err) {
       console.error('[Telegram webhook]', err)
-      await answerCallback(cb.id, '⚠️ เกิดข้อผิดพลาด')
     }
 
     return reply.send({ ok: true })

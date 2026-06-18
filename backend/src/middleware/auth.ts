@@ -12,6 +12,8 @@ export async function authenticate(request: FastifyRequest, reply: FastifyReply)
 export async function requireRole(roles: string[]) {
   return async (request: FastifyRequest, reply: FastifyReply) => {
     await authenticate(request, reply)
+    // BUG-01 fix: stop if authenticate already sent a 401
+    if (reply.sent) return
     const user = request.user as { userId: string; role: string }
     if (!roles.includes(user.role)) {
       return reply.status(403).send({ error: 'Forbidden' })

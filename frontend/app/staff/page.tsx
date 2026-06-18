@@ -23,6 +23,8 @@ export default function StaffPage() {
   const [memberSelected, setMemberSelected]   = useState<any>(null)
   const [creditForm, setCreditForm]           = useState({ amount: '', note: '' })
   const [creditLoading, setCreditLoading]     = useState(false)
+  const [openMode, setOpenMode]               = useState<'manual' | 'timer'>('manual')
+  const [autoLockMinutes, setAutoLockMinutes] = useState('3')
 
   const shopId = typeof window !== 'undefined'
     ? (localStorage.getItem('shopId') || 'shop-demo-001') : 'shop-demo-001'
@@ -54,9 +56,9 @@ export default function StaffPage() {
   })
 
   const { data: membersData, refetch: refetchMembers } = useQuery({
-    queryKey: ['staffMembers', memberSearch],
-    queryFn:  () => api.get(`/staff/members?q=${memberSearch}&page=1`).then(r => r.data),
-    enabled:  !!token && tab === 'members',
+    queryKey: ['staffMembers', memberSearch, shopId],
+    queryFn:  () => api.get(`/staff/members?q=${memberSearch}&page=1&shopId=${shopId}`).then(r => r.data),
+    enabled:  !!token && tab === 'members' && !!shopId,
   })
 
   const { data: pendingWithdrawals, refetch: refetchWithdrawals } = useQuery({
@@ -112,13 +114,31 @@ export default function StaffPage() {
   }, [shopId])
 
   // ── Actions ────────────────────────────────────────────────
+  function computeAutoLockSeconds(): number | null {
+    if (openMode === 'manual') return null
+    const mins = parseFloat(autoLockMinutes)
+    if (isNaN(mins) || mins <= 0) return null
+    return Math.round(mins * 60)
+  }
+
   async function handleOpenRound() {
     setIsLoading(true)
     try {
-      const res = await staffApi.openRound(shopId)
+      const res = await staffApi.openRound(shopId, computeAutoLockSeconds())
       setCurrentRoundId(res.data.roundId); setRoundStatus('open')
       toast.success('🎯 เปิดรอบใหม่แล้ว!'); refetchRounds()
     } catch (e: any) { toast.error(e.response?.data?.error || 'เปิดรอบไม่ได้') }
+    finally { setIsLoading(false) }
+  }
+
+  async function handleLock() {
+    if (!currentRoundId) return
+    setIsLoading(true)
+    try {
+      await staffApi.lockRound(currentRoundId)
+      toast.success('🔒 ปิดรับแทงแล้ว')
+      setRoundStatus('locked'); refetchRounds()
+    } catch (e: any) { toast.error(e.response?.data?.error || 'ปิดรับแทงไม่ได้') }
     finally { setIsLoading(false) }
   }
 
@@ -149,7 +169,7 @@ export default function StaffPage() {
     if (!currentRoundId) return handleOpenRound()
     setIsLoading(true)
     try {
-      const res = await staffApi.nextRound(currentRoundId)
+      const res = await staffApi.nextRound(currentRoundId, computeAutoLockSeconds())
       setCurrentRoundId(res.data.roundId); setRoundStatus('open')
       toast.success('🎯 รอบถัดไปเปิดแล้ว!'); refetchRounds()
     } catch (e: any) { toast.error(e.response?.data?.error || 'เปิดต่อไม่ได้') }
@@ -254,6 +274,38 @@ export default function StaffPage() {
           <div className="bg-gray-800 rounded-2xl p-5 space-y-4">
             <h2 className="font-bold text-lg">ควบคุมรอบ</h2>
 
+            {(roundStatus === 'idle' || roundStatus === 'settled') && (
+              <div className="space-y-3">
+                {/* Mode selector: manual close vs. auto-lock timer */}
+                <div className="grid grid-cols-2 gap-2">
+                  <button onClick={() => setOpenMode('manual')}
+                    className={`py-2.5 rounded-xl text-sm font-semibold transition-all ${
+                      openMode === 'manual' ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                    }`}>
+                    ✋ ปิดรับแทงเอง
+                  </button>
+                  <button onClick={() => setOpenMode('timer')}
+                    className={`py-2.5 rounded-xl text-sm font-semibold transition-all ${
+                      openMode === 'timer' ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                    }`}>
+                    ⏱️ ตั้งเวลาปิด
+                  </button>
+                </div>
+                {openMode === 'timer' && (
+                  <div className="flex items-center gap-2">
+                    <input
+                      value={autoLockMinutes}
+                      onChange={e => setAutoLockMinutes(e.target.value)}
+                      type="number" min="1" step="0.5"
+                      className="flex-1 bg-gray-700 border border-gray-600 text-white rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-blue-500"
+                      placeholder="นาที"
+                    />
+                    <span className="text-gray-400 text-sm">นาที แล้วปิดรับแทงอัตโนมัติ</span>
+                  </div>
+                )}
+              </div>
+            )}
+
             {roundStatus === 'idle' && (
               <button onClick={handleOpenRound} disabled={isLoading}
                 className="w-full bg-green-500 hover:bg-green-600 disabled:opacity-50 text-white font-bold py-6 rounded-2xl text-xl transition-all active:scale-95">
@@ -287,7 +339,15 @@ export default function StaffPage() {
                     )}
                   </div>
                 )}
-                <p className="text-gray-400 text-sm text-center">ชั่งตราชั่งแล้ว — เลือกผล:</p>
+                {roundStatus === 'open' && (
+                  <button onClick={handleLock} disabled={isLoading}
+                    className="w-full bg-gray-700 hover:bg-gray-600 disabled:opacity-50 text-white font-semibold py-3 rounded-xl text-sm transition-all">
+                    🔒 ปิดรับแทง (ยังไม่ออกผล)
+                  </button>
+                )}
+                <p className="text-gray-400 text-sm text-center">
+                  {roundStatus === 'locked' ? 'ปิดรับแทงแล้ว — เลือกผล:' : 'พร้อมออกผลได้ทันทีถ้าต้องการ:'}
+                </p>
                 <div className="grid grid-cols-2 gap-3">
                   <button onClick={() => handleSettle('even')} disabled={isLoading}
                     className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold py-8 rounded-2xl text-3xl transition-all active:scale-95">

@@ -16,8 +16,9 @@ export async function authRoutes(app: FastifyInstance) {
   // POST /api/auth/send-otp
   app.post('/send-otp', async (request, reply) => {
     const { phone } = sendOtpSchema.parse(request.body)
-    const result = await sendOtp(phone)
-    return reply.send({ message: 'OTP sent', ...result })
+    await sendOtp(phone)
+    // SEC-09 fix: never return devCode in HTTP response (logged to console only)
+    return reply.send({ message: 'OTP sent' })
   })
 
   // POST /api/auth/login  (existing user)

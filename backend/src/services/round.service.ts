@@ -8,10 +8,14 @@ import { notifyWinner } from '../jobs/notification.jobs'
 import { notifyWin, notifyLose, notifyRefund } from './notification.service'
 
 const PAYOUT_RATE = parseFloat(process.env.PAYOUT_RATE || '0.90')
-const ROUND_DURATION = parseInt(process.env.ROUND_DURATION_SECONDS || '180') * 1000
 const BALANCE_WINDOW = parseInt(process.env.BALANCE_CUT_WINDOW_SECONDS || '30') * 1000
 
-export async function openRound(shopId: string, staffId: string) {
+/**
+ * เปิดรอบใหม่
+ * - autoLockSeconds ไม่ระบุ / null / 0  → โหมดกดเอง: ไม่มีการล็อกอัตโนมัติ staff ปิดรับแทงเองเมื่อพร้อม
+ * - autoLockSeconds เป็นจำนวนวินาที      → โหมดตั้งเวลา: ระบบจะล็อกให้เองอัตโนมัติตามเวลาที่ตั้ง (ลบ BALANCE_WINDOW ไว้ตัดยอดบาลานซ์ก่อนล็อกจริง)
+ */
+export async function openRound(shopId: string, staffId: string, autoLockSeconds?: number | null) {
   // Check no open round exists
   const existing = await prisma.round.findFirst({
     where: { shopId, status: { in: [RoundStatus.open, RoundStatus.locked] } },
@@ -22,18 +26,25 @@ export async function openRound(shopId: string, staffId: string) {
     data: { shopId, staffId, status: RoundStatus.open },
   })
 
-  const expiresAt = new Date(Date.now() + ROUND_DURATION).toISOString()
+  const useAutoLock = typeof autoLockSeconds === 'number' && autoLockSeconds > 0
+  const expiresAt = useAutoLock ? new Date(Date.now() + autoLockSeconds! * 1000).toISOString() : null
   emitRoundOpened(shopId, { roundId: round.id, shopId, expiresAt })
 
-  // Schedule auto-lock via BullMQ (persists across restarts)
-  await scheduleRoundLock(round.id, shopId, ROUND_DURATION - BALANCE_WINDOW)
+  if (useAutoLock) {
+    const lockDelayMs = Math.max(autoLockSeconds! * 1000 - BALANCE_WINDOW, 1000)
+    await scheduleRoundLock(round.id, shopId, lockDelayMs)
+  }
 
   return round
 }
 
 export async function lockRound(roundId: string, shopId: string) {
   const round = await prisma.round.findUniqueOrThrow({ where: { id: roundId } })
-  if (round.status !== RoundStatus.open) return
+  if (round.status !== RoundStatus.open) {
+    // BUG-06 fix: always cancel the scheduled job even if round is already locked
+    await cancelScheduledLock(roundId)
+    return
+  }
 
   // Run auto-balance
   await autoBalance(roundId)
@@ -54,7 +65,7 @@ export async function autoBalance(roundId: string) {
   })
 
   const totalEven = bets.filter(b => b.side === BetSide.even).reduce((s, b) => s.add(b.amountAccepted), new Decimal(0))
-  const totalOdd = bets.filter(b => b.side === BetSide.odd).reduce((s, b) => s.add(b.amountAccepted), new Decimal(0))
+  const totalOdd  = bets.filter(b => b.side === BetSide.odd).reduce((s, b) => s.add(b.amountAccepted), new Decimal(0))
 
   const diff = totalEven.sub(totalOdd).abs()
   if (diff.lte(0)) return // Already balanced
@@ -62,34 +73,42 @@ export async function autoBalance(roundId: string) {
   const excessSide = totalEven.gt(totalOdd) ? BetSide.even : BetSide.odd
   const excessBets = bets.filter(b => b.side === excessSide)
 
+  // BUG-05 fix: pre-compute all refunds, then execute in ONE transaction
+  type RefundItem = {
+    bet: (typeof bets)[0]
+    refundAmt: Decimal
+    newAccepted: Decimal
+    fullRefund: boolean
+  }
+  const toRefund: RefundItem[] = []
   let remaining = diff
+
   for (const bet of excessBets) {
     if (remaining.lte(0)) break
-
     if (bet.amountAccepted.lte(remaining)) {
-      // Refund entire bet
-      await prisma.$transaction(async (tx) => {
-        await tx.bet.update({
-          where: { id: bet.id },
-          data: { amountAccepted: 0, status: BetStatus.refunded },
-        })
-        await unlockAndRefund(bet.userId, bet.amountAccepted, bet.id, tx)
-      })
+      toRefund.push({ bet, refundAmt: bet.amountAccepted, newAccepted: new Decimal(0), fullRefund: true })
       remaining = remaining.sub(bet.amountAccepted)
     } else {
-      // Partial refund
       const refundAmt = remaining
-      const newAccepted = bet.amountAccepted.sub(refundAmt)
-      await prisma.$transaction(async (tx) => {
-        await tx.bet.update({
-          where: { id: bet.id },
-          data: { amountAccepted: newAccepted, status: BetStatus.partial },
-        })
-        await unlockAndRefund(bet.userId, refundAmt, bet.id, tx)
-      })
+      toRefund.push({ bet, refundAmt, newAccepted: bet.amountAccepted.sub(refundAmt), fullRefund: false })
       remaining = new Decimal(0)
     }
   }
+
+  if (toRefund.length === 0) return
+
+  await prisma.$transaction(async (tx) => {
+    for (const item of toRefund) {
+      await tx.bet.update({
+        where: { id: item.bet.id },
+        data: {
+          amountAccepted: item.newAccepted,
+          status: item.fullRefund ? BetStatus.refunded : BetStatus.partial,
+        },
+      })
+      await unlockAndRefund(item.bet.userId, item.refundAmt, item.bet.id, tx)
+    }
+  })
 }
 
 export async function placeBet(

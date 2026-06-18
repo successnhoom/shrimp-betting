@@ -28,12 +28,20 @@ const envSchema = z.object({
   PROMPTPAY_PHONE:           z.string().default('0800000000'),
 
   // Optional services
-  TWILIO_ACCOUNT_SID: z.string().optional(),
-  TWILIO_AUTH_TOKEN:  z.string().optional(),
-  TWILIO_PHONE_NUMBER:z.string().optional(),
-  STRIPE_SECRET_KEY:  z.string().optional(),
-  STRIPE_WEBHOOK_SECRET: z.string().optional(),
-  SENTRY_DSN:         z.string().optional(),
+  TWILIO_ACCOUNT_SID:        z.string().optional(),
+  TWILIO_AUTH_TOKEN:         z.string().optional(),
+  TWILIO_PHONE_NUMBER:       z.string().optional(),
+  TWILIO_VERIFY_SERVICE_SID: z.string().optional(),
+  STRIPE_SECRET_KEY:         z.string().optional(),
+  STRIPE_WEBHOOK_SECRET:     z.string().optional(),
+  SENTRY_DSN:                z.string().optional(),
+  CUBIXPAY_API_KEY:          z.string().optional(),
+  CUBIXPAY_SECRET_KEY:       z.string().optional(),
+  CUBIXPAY_WEBHOOK_SECRET:   z.string().optional(),
+  TELEGRAM_BOT_TOKEN:        z.string().optional(),
+  TELEGRAM_ADMIN_CHAT_ID:    z.string().optional(),
+  TELEGRAM_WEBHOOK_SECRET:   z.string().optional(),
+  BACKEND_URL:               z.string().optional(),
 })
 
 export type Env = z.infer<typeof envSchema>
@@ -56,9 +64,11 @@ export function validateEnv(): Env {
   // Warn about missing optional services
   const data = result.data
   if (data.NODE_ENV === 'production') {
-    if (!data.STRIPE_SECRET_KEY)   console.warn('⚠️  STRIPE_SECRET_KEY not set — payments disabled')
-    if (!data.TWILIO_ACCOUNT_SID)  console.warn('⚠️  TWILIO_ACCOUNT_SID not set — SMS disabled')
-    if (!data.SENTRY_DSN)          console.warn('⚠️  SENTRY_DSN not set — error tracking disabled')
+    if (!data.STRIPE_SECRET_KEY)         console.warn('⚠️  STRIPE_SECRET_KEY not set — Stripe payments disabled')
+    if (!data.TWILIO_ACCOUNT_SID)        console.warn('⚠️  TWILIO_ACCOUNT_SID not set — SMS OTP disabled')
+    if (!data.SENTRY_DSN)                console.warn('⚠️  SENTRY_DSN not set — error tracking disabled')
+    if (!data.CUBIXPAY_WEBHOOK_SECRET)   console.warn('⚠️  CUBIXPAY_WEBHOOK_SECRET not set — webhook signature verification DISABLED (insecure!)')
+    if (!data.TELEGRAM_WEBHOOK_SECRET)   console.warn('⚠️  TELEGRAM_WEBHOOK_SECRET not set — Telegram webhook is unauthenticated (insecure!)')
     if (data.JWT_SECRET === 'change-this-secret-in-production') {
       console.error('❌ JWT_SECRET must be changed in production!')
       process.exit(1)

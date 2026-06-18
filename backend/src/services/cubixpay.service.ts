@@ -163,8 +163,8 @@ export function verifyWebhookSignature(
 ): boolean {
   const secret = process.env.CUBIXPAY_WEBHOOK_SECRET || ''
   if (!secret) {
-    console.warn('⚠️ CUBIXPAY_WEBHOOK_SECRET not set — skipping signature check')
-    return true
+    console.error('❌ CUBIXPAY_WEBHOOK_SECRET not set — rejecting webhook request')
+    return false
   }
   const expected = crypto.createHash('sha256')
     .update(`${orderId}${amount}${status}${secret}`)
